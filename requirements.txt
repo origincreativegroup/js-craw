@@ -10,7 +10,7 @@ selenium==4.15.2
 playwright==1.40.0
 beautifulsoup4==4.12.2
 requests==2.31.0
-httpx==0.25.1
+httpx==0.25.2
 redis==5.0.1
 apscheduler==3.10.4
 python-dotenv==1.0.0
