@@ -1,6 +1,6 @@
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 import os
 
@@ -9,7 +9,7 @@ from app.config import settings
 # Generate encryption key from secret
 def _get_encryption_key() -> bytes:
     """Derive encryption key from settings"""
-    kdf = PBKDF2(
+    kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=b'job_crawler_salt',  # In production, use a random salt stored securely
