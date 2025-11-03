@@ -47,14 +47,14 @@ jobs:
             COMMIT_SHA='${COMMIT_SHA}'
             
             # Build image with latest tag
-            docker build -t jscraw.lan/js-craw:latest .
+            docker build -t jscraw.lan:5000/js-craw:latest .
             
             # Tag with commit SHA
-            docker tag jscraw.lan/js-craw:latest jscraw.lan/js-craw:\${COMMIT_SHA}
+            docker tag jscraw.lan:5000/js-craw:latest jscraw.lan:5000/js-craw:\${COMMIT_SHA}
             
             # Push both tags to registry
-            docker push jscraw.lan/js-craw:latest || echo "Warning: Failed to push latest tag"
-            docker push jscraw.lan/js-craw:\${COMMIT_SHA} || echo "Warning: Failed to push commit tag"
+            docker push jscraw.lan:5000/js-craw:latest || echo "Warning: Failed to push latest tag"
+            docker push jscraw.lan:5000/js-craw:\${COMMIT_SHA} || echo "Warning: Failed to push commit tag"
             
             # Clean up build directory
             cd ~
@@ -64,7 +64,7 @@ jobs:
       - name: Build summary
         run: |
           echo "## Docker Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- Image: jscraw.lan/js-craw:latest" >> $GITHUB_STEP_SUMMARY
-          echo "- Tagged: jscraw.lan/js-craw:${{ steps.commit.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: jscraw.lan:5000/js-craw:latest" >> $GITHUB_STEP_SUMMARY
+          echo "- Tagged: jscraw.lan:5000/js-craw:${{ steps.commit.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- Built on: ${{ secrets.PI_FORGE_HOST || '192.168.50.158' }}" >> $GITHUB_STEP_SUMMARY
 

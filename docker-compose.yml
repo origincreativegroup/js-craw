@@ -58,7 +58,7 @@ services:
       retries: 3
 
   job-crawler:
-    image: jscraw.lan/js-craw:latest
+    image: jscraw.lan:5000/js-craw:latest
     pull_policy: always
     # For local development, uncomment the line below and comment out the image line above
     # build: .

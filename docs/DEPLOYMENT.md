@@ -40,8 +40,8 @@ The following secrets must be configured in your GitHub repository settings:
 ### Image Tags
 
 Images are tagged with:
-- `jscraw.lan/js-craw:latest` - Always points to the latest build
-- `jscraw.lan/js-craw:{commit-sha}` - Specific commit SHA (e.g., `jscraw.lan/js-craw:abc1234`)
+- `jscraw.lan:5000/js-craw:latest` - Always points to the latest build
+- `jscraw.lan:5000/js-craw:{commit-sha}` - Specific commit SHA (e.g., `jscraw.lan:5000/js-craw:abc1234`)
 
 ### Viewing Workflow Runs
 
@@ -52,26 +52,31 @@ Images are tagged with:
 
 ## Docker Registry Setup on pi-forge
 
-The Docker registry must be configured on pi-forge to accept pushes from `jscraw.lan` domain.
+The Docker registry is configured on pi-forge and runs on port 5000. The registry is accessible at `jscraw.lan:5000`.
 
-### Option 1: Docker Registry (Default)
+### Registry Configuration
 
-If using Docker's registry service:
+The registry is set up using docker-compose at `/home/admin/docker/registry/`:
 
 ```bash
-# On pi-forge, ensure Docker registry is running
-docker ps | grep registry
+# Check if registry is running
+ssh pi-forge "docker ps | grep registry"
 
-# If not running, start it:
-docker run -d -p 5000:5000 --name registry registry:2
+# View registry logs
+ssh pi-forge "docker logs docker-registry"
+
+# Restart registry if needed
+ssh pi-forge "cd /home/admin/docker/registry && docker-compose restart"
 ```
 
-### Option 2: Custom Registry with Domain
+### Docker Daemon Configuration
 
-If you have a custom registry setup with `jscraw.lan` domain, ensure:
-- DNS resolves `jscraw.lan` to pi-forge IP (192.168.50.158)
-- Registry is accessible from pi-forge
-- Registry accepts images with `jscraw.lan` prefix
+Docker on pi-forge is configured to allow insecure registries:
+- `jscraw.lan:5000`
+- `localhost:5000`
+- `192.168.50.158:5000`
+
+Configuration is in `/etc/docker/daemon.json` on pi-forge.
 
 ### Testing Registry Access
 
@@ -82,10 +87,13 @@ On pi-forge, test the registry:
 docker pull hello-world
 
 # Tag for your registry
-docker tag hello-world jscraw.lan/test:latest
+docker tag hello-world jscraw.lan:5000/test:latest
 
 # Push to registry
-docker push jscraw.lan/test:latest
+docker push jscraw.lan:5000/test:latest
+
+# Verify image is in registry
+curl http://localhost:5000/v2/_catalog
 
 # If successful, registry is working
 ```
@@ -159,7 +167,7 @@ curl http://jscraw.lan/api/stats
 3. On pi-forge, pull the new image:
    ```bash
    ssh pi-forge
-   docker pull jscraw.lan/js-craw:latest
+   docker pull jscraw.lan:5000/js-craw:latest
    docker-compose up -d job-crawler
    ```
 
@@ -178,14 +186,14 @@ cd /path/to/js-craw
 git pull origin main
 
 # Build image
-docker build -t jscraw.lan/js-craw:latest .
+docker build -t jscraw.lan:5000/js-craw:latest .
 
 # Tag with commit SHA
-docker tag jscraw.lan/js-craw:latest jscraw.lan/js-craw:$(git rev-parse --short HEAD)
+docker tag jscraw.lan:5000/js-craw:latest jscraw.lan:5000/js-craw:$(git rev-parse --short HEAD)
 
 # Push to registry
-docker push jscraw.lan/js-craw:latest
-docker push jscraw.lan/js-craw:$(git rev-parse --short HEAD)
+docker push jscraw.lan:5000/js-craw:latest
+docker push jscraw.lan:5000/js-craw:$(git rev-parse --short HEAD)
 
 # Update running container
 docker-compose pull job-crawler
@@ -198,7 +206,7 @@ The `docker-compose.yml` file has been configured to use the registry image:
 
 ```yaml
 job-crawler:
-  image: jscraw.lan/js-craw:latest
+  image: jscraw.lan:5000/js-craw:latest
   pull_policy: always
   # For local development, uncomment the line below and comment out the image line above
   # build: .
@@ -229,7 +237,7 @@ For local development, you can switch back to building locally:
 **Push Fails:**
 - Verify Docker registry is running: `ssh pi-forge "docker ps | grep registry"`
 - Check registry logs: `ssh pi-forge "docker logs registry"`
-- Test registry manually: `docker push jscraw.lan/js-craw:test`
+- Test registry manually: `docker push jscraw.lan:5000/js-craw:test`
 
 ### Caddy Issues
 
@@ -247,7 +255,7 @@ For local development, you can switch back to building locally:
 
 **Image Not Found:**
 - Verify image exists: `ssh pi-forge "docker images | grep jscraw"`
-- Check registry connectivity: `ssh pi-forge "docker pull jscraw.lan/js-craw:latest"`
+- Check registry connectivity: `ssh pi-forge "docker pull jscraw.lan:5000/js-craw:latest"`
 
 **Container Won't Start:**
 - Check logs: `ssh pi-forge "docker-compose logs job-crawler"`
