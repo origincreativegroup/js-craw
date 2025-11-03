@@ -1,0 +1,71 @@
+#!/usr/bin/expect -f
+
+set host "192.168.50.248"
+set user "admin"
+set password "swimfast01"
+set pubkey [exec cat /Users/origin/.ssh/id_ed25519.pub]
+
+set timeout 30
+
+# First, try to detect OS and use appropriate commands
+spawn ssh -o PreferredAuthentications=password $user@$host "uname -a 2>/dev/null || echo WINDOWS"
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    "yes/no" {
+        send "yes\r"
+        exp_continue
+    }
+    "Linux" {
+        puts "Linux detected - using Unix commands"
+        set os "linux"
+        exp_continue
+    }
+    "WINDOWS" {
+        puts "Windows detected - using PowerShell"
+        set os "windows"
+        exp_continue
+    }
+    timeout {
+        puts "Timeout - trying direct connection"
+        set os "unknown"
+    }
+    eof {
+        set os "unknown"
+    }
+}
+
+# Now install the key based on OS
+if {$os == "linux"} {
+    spawn ssh $user@$host "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$pubkey' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo 'SUCCESS'"
+} elseif {$os == "windows"} {
+    spawn ssh $user@$host "powershell -Command \"if (-not (Test-Path .ssh)) { New-Item -ItemType Directory -Path .ssh }; Add-Content -Path .ssh\\authorized_keys -Value '$pubkey'\" && echo SUCCESS"
+} else {
+    # Try Unix commands first
+    spawn ssh $user@$host "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$pubkey' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo 'SUCCESS'"
+}
+
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    "SUCCESS" {
+        puts "SUCCESS: Key installed on $host"
+        exit 0
+    }
+    "Permission denied" {
+        puts "ERROR: Permission denied for $host"
+        exit 1
+    }
+    timeout {
+        puts "ERROR: Connection timeout to $host"
+        exit 1
+    }
+    eof {
+        exit 0
+    }
+}
+

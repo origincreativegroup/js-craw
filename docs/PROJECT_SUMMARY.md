@@ -71,7 +71,7 @@ job-crawler/
    ```
 
 3. **Configure**
-   - Open http://localhost:8000/static/index.html
+   - Open http://localhost:8001/static/index.html
    - Add LinkedIn credentials in Settings
    - Create your first search
 
@@ -321,7 +321,7 @@ cd job-crawler
 ./start.sh
 ```
 
-Then open: http://localhost:8000/static/index.html
+Then open: http://localhost:8001/static/index.html
 
 **Good luck with your job search! 🎯**
 

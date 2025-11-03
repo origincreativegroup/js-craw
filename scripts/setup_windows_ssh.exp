@@ -1,0 +1,38 @@
+#!/usr/bin/expect -f
+
+set host [lindex $argv 0]
+set user [lindex $argv 1]
+set password [lindex $argv 2]
+set pubkey [exec cat /Users/origin/.ssh/id_ed25519.pub]
+
+set timeout 30
+
+# For Windows, we need to create the .ssh directory and authorized_keys file differently
+spawn ssh $user@$host "if not exist .ssh mkdir .ssh && echo $pubkey >> .ssh\\authorized_keys"
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    "yes/no" {
+        send "yes\r"
+        exp_continue
+    }
+    "Permission denied" {
+        puts "ERROR: Permission denied for $host"
+        exit 1
+    }
+    "Access denied" {
+        puts "ERROR: Access denied for $host"
+        exit 1
+    }
+    timeout {
+        puts "ERROR: Connection timeout to $host"
+        exit 1
+    }
+    eof {
+        puts "SUCCESS: Key installation attempted on $host"
+        exit 0
+    }
+}
+

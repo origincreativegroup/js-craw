@@ -1,0 +1,40 @@
+#!/usr/bin/expect -f
+
+set host [lindex $argv 0]
+set user [lindex $argv 1]
+set password [lindex $argv 2]
+set pubkey [exec cat /Users/origin/.ssh/id_ed25519.pub]
+
+set timeout 30
+
+spawn ssh $user@$host "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$pubkey' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo 'Key installed successfully'"
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    "yes/no" {
+        send "yes\r"
+        exp_continue
+    }
+    "Permission denied" {
+        puts "ERROR: Permission denied for $host"
+        exit 1
+    }
+    "Key installed successfully" {
+        puts "SUCCESS: Key installed on $host"
+        exit 0
+    }
+    "already exists" {
+        puts "INFO: Key already exists on $host"
+        exit 0
+    }
+    timeout {
+        puts "ERROR: Connection timeout to $host"
+        exit 1
+    }
+    eof {
+        exit 0
+    }
+}
+

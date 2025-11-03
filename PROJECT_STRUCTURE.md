@@ -263,7 +263,7 @@ Job (1) ──< (N) FollowUp
 1. Copy `.env.example` to `.env`
 2. Configure environment variables
 3. Run `./start.sh` or `docker-compose up -d`
-4. Access dashboard at http://localhost:8000/static/index.html
+4. Access dashboard at http://localhost:8001/static/index.html
 
 ### Production Considerations
 
@@ -312,7 +312,7 @@ This project structure follows patterns established in `origin/github/nexus.lan`
 - **Architecture Details**: See `docs/ARCHITECTURE.md`
 - **Setup Guide**: See `docs/SETUP.md`
 - **Feature Overview**: See `docs/PROJECT_SUMMARY.md`
-- **API Documentation**: http://localhost:8000/docs (when running)
+- **API Documentation**: http://localhost:8001/docs (when running)
 
 ---
 

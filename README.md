@@ -91,7 +91,7 @@ docker exec job-crawler-ollama ollama pull llama2
 
 ### 3. Configure
 
-1. Open http://localhost:8000/static/index.html
+1. Open http://localhost:8001/static/index.html
 2. Go to **Settings** tab
 3. Add LinkedIn credentials
 4. (Optional) Add Indeed credentials
@@ -120,6 +120,7 @@ Within 2-3 minutes, you should:
 - **[docs/SETUP.md](docs/SETUP.md)** - Detailed setup guide
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Technical architecture
 - **[docs/PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md)** - Complete feature overview
+- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** - CI/CD pipeline and deployment guide
 
 ## 🔧 Configuration
 
@@ -163,7 +164,7 @@ See `.env.example` for all options.
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| job-crawler | 8000 | Main application |
+| job-crawler | 8001 | Main application |
 | postgres | 5432 | Database |
 | redis | 6379 | Cache |
 | selenium-chrome | 4444 | Browser automation |
@@ -178,7 +179,7 @@ See `.env.example` for all options.
 - `GET /api/stats` - Dashboard statistics
 - `POST /api/credentials` - Save platform credentials
 
-Full API docs: http://localhost:8000/docs
+Full API docs: http://localhost:8001/docs
 
 ## 🛠️ Development
 

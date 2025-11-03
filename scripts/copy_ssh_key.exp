@@ -1,0 +1,40 @@
+#!/usr/bin/expect -f
+
+set host [lindex $argv 0]
+set user [lindex $argv 1]
+set password [lindex $argv 2]
+set pubkey_file [lindex $argv 3]
+
+set timeout 30
+
+spawn ssh-copy-id -i $pubkey_file $user@$host
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    "yes/no" {
+        send "yes\r"
+        exp_continue
+    }
+    "Permission denied" {
+        puts "ERROR: Permission denied"
+        exit 1
+    }
+    "Number of key(s) added" {
+        puts "SUCCESS: Key added to $host"
+        exit 0
+    }
+    "already installed" {
+        puts "INFO: Key already installed on $host"
+        exit 0
+    }
+    timeout {
+        puts "ERROR: Connection timeout"
+        exit 1
+    }
+    eof {
+        exit 0
+    }
+}
+

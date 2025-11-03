@@ -1,0 +1,70 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PI_FORGE_SSH_KEY }}
+      
+      - name: Add pi-forge to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.PI_FORGE_HOST || '192.168.50.158' }} >> ~/.ssh/known_hosts
+      
+      - name: Get commit SHA
+        id: commit
+        run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      
+      - name: Build and push Docker image on pi-forge
+        env:
+          PI_FORGE_USER: ${{ secrets.PI_FORGE_SSH_USER || 'admin' }}
+          PI_FORGE_HOST: ${{ secrets.PI_FORGE_HOST || '192.168.50.158' }}
+          COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          # Create a temporary directory for the build
+          ssh ${PI_FORGE_USER}@${PI_FORGE_HOST} "mkdir -p /tmp/js-craw-build"
+          
+          # Copy files to pi-forge
+          rsync -avz --exclude '.git' --exclude '__pycache__' --exclude '*.pyc' \
+            --exclude '.env' --exclude 'venv' --exclude 'node_modules' \
+            ./ ${PI_FORGE_USER}@${PI_FORGE_HOST}:/tmp/js-craw-build/
+          
+          # Build Docker image on pi-forge
+          ssh ${PI_FORGE_USER}@${PI_FORGE_HOST} "bash -s" << EOF
+            cd /tmp/js-craw-build
+            COMMIT_SHA='${COMMIT_SHA}'
+            
+            # Build image with latest tag
+            docker build -t jscraw.lan/js-craw:latest .
+            
+            # Tag with commit SHA
+            docker tag jscraw.lan/js-craw:latest jscraw.lan/js-craw:\${COMMIT_SHA}
+            
+            # Push both tags to registry
+            docker push jscraw.lan/js-craw:latest || echo "Warning: Failed to push latest tag"
+            docker push jscraw.lan/js-craw:\${COMMIT_SHA} || echo "Warning: Failed to push commit tag"
+            
+            # Clean up build directory
+            cd ~
+            rm -rf /tmp/js-craw-build
+          EOF
+      
+      - name: Build summary
+        run: |
+          echo "## Docker Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: jscraw.lan/js-craw:latest" >> $GITHUB_STEP_SUMMARY
+          echo "- Tagged: jscraw.lan/js-craw:${{ steps.commit.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Built on: ${{ secrets.PI_FORGE_HOST || '192.168.50.158' }}" >> $GITHUB_STEP_SUMMARY
+

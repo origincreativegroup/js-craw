@@ -74,7 +74,7 @@ fi
 # Check API
 echo ""
 echo "6. Checking API..."
-if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+if curl -s http://localhost:8001/health > /dev/null 2>&1; then
     echo "   ✅ API is responding"
 else
     echo "   ⚠️  API is not responding"
@@ -103,16 +103,16 @@ running=$(docker ps --format '{{.Names}}' | wc -l)
 echo "Running containers: $running/5"
 
 # Get API status
-api_status=$(curl -s http://localhost:8000/health 2>/dev/null | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
+api_status=$(curl -s http://localhost:8001/health 2>/dev/null | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
 if [ ! -z "$api_status" ]; then
     echo "API Status: $api_status"
 fi
 
 echo ""
 echo "🔗 Quick Links:"
-echo "   Dashboard: http://localhost:8000/static/index.html"
+echo "   Dashboard: http://localhost:8001/static/index.html"
 echo "   OpenWebUI: http://localhost:3000"
-echo "   API Docs:  http://localhost:8000/docs"
+echo "   API Docs:  http://localhost:8001/docs"
 
 echo ""
 echo "💡 Common Commands:"

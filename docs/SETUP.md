@@ -29,7 +29,7 @@ docker exec job-crawler-ollama ollama pull llama2
 
 ### 3. Configure (2 minutes)
 
-1. Open http://localhost:8000/static/index.html
+1. Open http://localhost:8001/static/index.html
 2. Go to **Settings** tab
 3. Add LinkedIn credentials
 4. (Optional) Add Indeed credentials
@@ -83,7 +83,7 @@ Within 2-3 minutes, you should:
 ## Verification Checklist
 
 - [ ] Docker containers running: `docker-compose ps`
-- [ ] Can access dashboard: http://localhost:8000/static/index.html
+- [ ] Can access dashboard: http://localhost:8001/static/index.html
 - [ ] Credentials saved in Settings
 - [ ] At least one search created
 - [ ] Test notification received
