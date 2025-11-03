@@ -1,0 +1,62 @@
+# SSH Config Example
+# Copy this to ~/.ssh/config and customize for your needs
+# Make sure to set proper permissions: chmod 600 ~/.ssh/config
+
+# GitHub Configuration
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519
+    AddKeysToAgent yes
+    UseKeychain yes
+
+# GitLab Configuration
+Host gitlab.com
+    HostName gitlab.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519
+    AddKeysToAgent yes
+
+# Example: Remote Server Configuration
+# Host myserver
+#     HostName example.com
+#     User your_username
+#     Port 22
+#     IdentityFile ~/.ssh/id_ed25519
+#     ServerAliveInterval 60
+#     ServerAliveCountMax 3
+#     ForwardAgent yes
+
+# Example: Production Server
+# Host production
+#     HostName prod.example.com
+#     User deploy
+#     Port 2222
+#     IdentityFile ~/.ssh/id_ed25519
+#     ForwardAgent yes
+#     StrictHostKeyChecking no
+#     UserKnownHostsFile /dev/null
+
+# Example: Multiple GitHub Accounts
+# Host github.com-personal
+#     HostName github.com
+#     User git
+#     IdentityFile ~/.ssh/id_ed25519_personal
+#
+# Host github.com-work
+#     HostName github.com
+#     User git
+#     IdentityFile ~/.ssh/id_ed25519_work
+
+# Example: Jump Host (Bastion)
+# Host bastion
+#     HostName bastion.example.com
+#     User admin
+#     IdentityFile ~/.ssh/id_ed25519
+#
+# Host internal-server
+#     HostName 10.0.0.5
+#     User deploy
+#     ProxyJump bastion
+#     IdentityFile ~/.ssh/id_ed25519
+
