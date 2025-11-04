@@ -36,7 +36,7 @@ class CrawlerOrchestrator:
         """
         Crawl ALL active companies and save jobs immediately.
         AI analysis is done in batch processing after jobs are saved for speed.
-        
+
         Returns:
             List of newly discovered jobs
         """
@@ -46,25 +46,28 @@ class CrawlerOrchestrator:
             return []
 
         async with self._crawl_lock:
-            all_results = []
-            all_new_job_ids = []  # Collect IDs for batch AI processing
+            all_results: List[Dict] = []
+            all_new_job_ids: List[int] = []  # Collect IDs for batch AI processing
             self._cancel_requested = False
-            
+
             async with AsyncSessionLocal() as db:
                 # Get all active companies
                 result = await db.execute(
                     select(Company).where(Company.is_active == True)
                 )
                 companies = result.scalars().all()
-                
-                logger.info(f"Crawling all {len(companies)} active companies (saving jobs immediately, AI analysis in batch)")
-                
+
+                logger.info(
+                    f"Crawling all {len(companies)} active companies (saving jobs immediately, AI analysis in batch)"
+                )
+
                 for company in companies:
                     if self._cancel_requested:
                         logger.info("Crawl cancellation requested - stopping after current company")
                         break
+
                     log = CrawlLog(
-                        search_criteria_id=None,  # No search criteria for universal crawl
+                        search_criteria_id=None,
                         company_id=company.id,
                         platform=f"company_{company.id}",
                         started_at=datetime.utcnow(),
@@ -72,134 +75,61 @@ class CrawlerOrchestrator:
                     )
                     db.add(log)
                     await db.commit()
-                    
+
                     try:
-                        # Crawl company career page - get ALL available jobs
                         jobs = await self._crawl_company(company)
                         logger.info(f"Found {len(jobs)} jobs from {company.name}")
-                        
-                        # Save jobs IMMEDIATELY without AI analysis (for speed)
+
                         new_jobs = await self._process_company_jobs(
-                            db, 
-                            search=None,  # No search criteria
-                            company=company, 
-                            jobs=jobs,  # Save all jobs, no filtering
-                            skip_ai_analysis=True  # Skip AI for now, do it in batch later
+                            db,
+                            search=None,
+                            company=company,
+                            jobs=jobs,
+                            skip_ai_analysis=True
                         )
-                        
-                        # Collect job IDs for batch AI processing
-                        all_new_job_ids.extend([job.id for job in new_jobs])
-                        
+
+                        all_new_job_ids.extend(job.id for job in new_jobs)
+
                         log.completed_at = datetime.utcnow()
                         log.status = 'completed'
                         log.jobs_found = len(jobs)
                         log.new_jobs = len(new_jobs)
-                        
-                        # Update company stats
+
                         company.last_crawled_at = datetime.utcnow()
                         company.jobs_found_total += len(new_jobs)
-                        
-                        all_results.extend([{
-                            'id': job.id,
-                            'title': job.title,
-                            'company': job.company,
-                            'url': job.url,
-                            'ai_match_score': None  # Will be set by batch processing
-                        } for job in new_jobs])
-                        
-                        logger.info(f"✓ {company.name}: Found {len(jobs)} jobs, saved {len(new_jobs)} new jobs (AI analysis pending)")
-                        
+
+                        all_results.extend(
+                            [
+                                {
+                                    'id': job.id,
+                                    'title': job.title,
+                                    'company': job.company,
+                                    'url': job.url,
+                                    'ai_match_score': None,
+                                }
+                                for job in new_jobs
+                            ]
+                        )
+
+                        logger.info(
+                            f"✓ {company.name}: Found {len(jobs)} jobs, saved {len(new_jobs)} new jobs (AI analysis pending)"
+                        )
+
                     except Exception as e:
                         logger.error(f"Error crawling company {company.name}: {e}", exc_info=True)
                         log.status = 'failed'
                         log.error_message = str(e)
-                    
+
                     await db.commit()
-            
-            # Batch process AI analysis on all new jobs (in background)
+
             if all_new_job_ids and not self._cancel_requested:
                 logger.info(f"Starting batch AI analysis on {len(all_new_job_ids)} new jobs...")
-                # Run batch analysis in background (don't await to return immediately)
                 asyncio.create_task(self._batch_analyze_jobs(all_new_job_ids))
-            
+
             logger.info(f"Crawl complete: {len(all_results)} new jobs saved (AI analysis running in background)")
-            
+
             return all_results
-        all_results = []
-        all_new_job_ids = []  # Collect IDs for batch AI processing
-        
-        async with AsyncSessionLocal() as db:
-            # Get all active companies
-            result = await db.execute(
-                select(Company).where(Company.is_active == True)
-            )
-            companies = result.scalars().all()
-            
-            logger.info(f"Crawling all {len(companies)} active companies (saving jobs immediately, AI analysis in batch)")
-            
-            for company in companies:
-                log = CrawlLog(
-                    search_criteria_id=None,  # No search criteria for universal crawl
-                    company_id=company.id,
-                    platform=f"company_{company.id}",
-                    started_at=datetime.utcnow(),
-                    status='running'
-                )
-                db.add(log)
-                await db.commit()
-                
-                try:
-                    # Crawl company career page - get ALL available jobs
-                    jobs = await self._crawl_company(company)
-                    logger.info(f"Found {len(jobs)} jobs from {company.name}")
-                    
-                    # Save jobs IMMEDIATELY without AI analysis (for speed)
-                    new_jobs = await self._process_company_jobs(
-                        db, 
-                        search=None,  # No search criteria
-                        company=company, 
-                        jobs=jobs,  # Save all jobs, no filtering
-                        skip_ai_analysis=True  # Skip AI for now, do it in batch later
-                    )
-                    
-                    # Collect job IDs for batch AI processing
-                    all_new_job_ids.extend([job.id for job in new_jobs])
-                    
-                    log.completed_at = datetime.utcnow()
-                    log.status = 'completed'
-                    log.jobs_found = len(jobs)
-                    log.new_jobs = len(new_jobs)
-                    
-                    # Update company stats
-                    company.last_crawled_at = datetime.utcnow()
-                    company.jobs_found_total += len(new_jobs)
-                    
-                    all_results.extend([{
-                        'id': job.id,
-                        'title': job.title,
-                        'company': job.company,
-                        'url': job.url,
-                        'ai_match_score': None  # Will be set by batch processing
-                    } for job in new_jobs])
-                    
-                    logger.info(f"✓ {company.name}: Found {len(jobs)} jobs, saved {len(new_jobs)} new jobs (AI analysis pending)")
-                    
-                except Exception as e:
-                    logger.error(f"Error crawling company {company.name}: {e}", exc_info=True)
-                    log.status = 'failed'
-                    log.error_message = str(e)
-                
-                await db.commit()
-        
-        # Batch process AI analysis on all new jobs (in background)
-        if all_new_job_ids:
-            logger.info(f"Starting batch AI analysis on {len(all_new_job_ids)} new jobs...")
-            # Run batch analysis in background (don't await to return immediately)
-            asyncio.create_task(self._batch_analyze_jobs(all_new_job_ids))
-        
-        logger.info(f"Crawl complete: {len(all_results)} new jobs saved (AI analysis running in background)")
-        
-        return all_results
+
 
     async def run_all_searches(self) -> List[Dict]:
         """Run all active searches"""
@@ -460,7 +390,11 @@ class CrawlerOrchestrator:
                 crawler.close()
                 return jobs
 
-            elif crawler_type == 'generic':
+            elif crawler_type in {'generic', 'workday'}:
+                if crawler_type == 'workday':
+                    logger.info(
+                        f"{company.name} uses a Workday-powered site – falling back to generic AI parsing"
+                    )
                 settings = Settings()
                 crawler = GenericCrawler(
                     company.name,
