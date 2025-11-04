@@ -287,6 +287,63 @@ async def get_companies(
         raise HTTPException(status_code=500, detail=f"Error loading companies: {str(e)}")
 
 
+@router.get("/companies/health")
+async def get_company_health(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get overall company list health metrics"""
+    try:
+        from sqlalchemy import func
+        
+        # Total companies
+        result = await db.execute(select(func.count(Company.id)))
+        total = result.scalar() or 0
+        
+        # Active companies
+        result = await db.execute(
+            select(func.count(Company.id)).where(Company.is_active == True)
+        )
+        active = result.scalar() or 0
+        
+        # Companies with high consecutive empty crawls
+        result = await db.execute(
+            select(func.count(Company.id)).where(
+                Company.is_active == True,
+                Company.consecutive_empty_crawls >= 2
+            )
+        )
+        needs_attention = result.scalar() or 0
+        
+        # Companies needing viability check
+        result = await db.execute(
+            select(func.count(Company.id)).where(
+                Company.is_active == True,
+                Company.viability_last_checked.is_(None)
+            )
+        )
+        unchecked = result.scalar() or 0
+        
+        # Average viability score
+        result = await db.execute(
+            select(func.avg(Company.viability_score)).where(
+                Company.is_active == True,
+                Company.viability_score.isnot(None)
+            )
+        )
+        avg_viability = result.scalar() or 0.0
+        
+        return {
+            "total_companies": total,
+            "active_companies": active,
+            "inactive_companies": total - active,
+            "needs_attention": needs_attention,
+            "unchecked_viability": unchecked,
+            "average_viability_score": round(avg_viability, 2) if avg_viability else None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading company health: {str(e)}")
+
+
 @router.get("/companies/{company_id}")
 async def get_company(
     company_id: int,
@@ -497,63 +554,6 @@ async def analyze_company_viability(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error analyzing company: {str(e)}")
-
-
-@router.get("/companies/health")
-async def get_company_health(
-    db: AsyncSession = Depends(get_db)
-):
-    """Get overall company list health metrics"""
-    try:
-        from sqlalchemy import func
-        
-        # Total companies
-        result = await db.execute(select(func.count(Company.id)))
-        total = result.scalar() or 0
-        
-        # Active companies
-        result = await db.execute(
-            select(func.count(Company.id)).where(Company.is_active == True)
-        )
-        active = result.scalar() or 0
-        
-        # Companies with high consecutive empty crawls
-        result = await db.execute(
-            select(func.count(Company.id)).where(
-                Company.is_active == True,
-                Company.consecutive_empty_crawls >= 2
-            )
-        )
-        needs_attention = result.scalar() or 0
-        
-        # Companies needing viability check
-        result = await db.execute(
-            select(func.count(Company.id)).where(
-                Company.is_active == True,
-                Company.viability_last_checked.is_(None)
-            )
-        )
-        unchecked = result.scalar() or 0
-        
-        # Average viability score
-        result = await db.execute(
-            select(func.avg(Company.viability_score)).where(
-                Company.is_active == True,
-                Company.viability_score.isnot(None)
-            )
-        )
-        avg_viability = result.scalar() or 0.0
-        
-        return {
-            "total_companies": total,
-            "active_companies": active,
-            "inactive_companies": total - active,
-            "needs_attention": needs_attention,
-            "unchecked_viability": unchecked,
-            "average_viability_score": round(avg_viability, 2) if avg_viability else None
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading company health: {str(e)}")
 
 
 @router.post("/automation/company-refresh")
