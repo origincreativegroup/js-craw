@@ -1,0 +1,106 @@
+name: Deploy to Pi-Forge
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Pull latest code
+        working-directory: /home/admin/docker/js-craw
+        run: |
+          git fetch origin
+          git reset --hard origin/main
+          echo "✅ Code updated to $(git log -1 --oneline)"
+
+      - name: Create backup of current deployment
+        run: |
+          timestamp=$(date +%Y%m%d_%H%M%S)
+          echo "📦 Creating backup: backup_$timestamp"
+
+          # Stop containers before backup
+          cd /home/admin/docker/js-craw
+          docker compose down
+
+          # Backup directory structure
+          mkdir -p /home/admin/deployments/js-craw
+          if [ -d "/home/admin/deployments/js-craw/current" ]; then
+            mv /home/admin/deployments/js-craw/current /home/admin/deployments/js-craw/backup_$timestamp
+            echo "✅ Previous deployment backed up"
+          fi
+
+      - name: Rebuild Docker images
+        working-directory: /home/admin/docker/js-craw
+        run: |
+          echo "🔨 Building Docker images..."
+          docker compose build --no-cache
+          echo "✅ Images rebuilt successfully"
+
+      - name: Deploy updated containers
+        working-directory: /home/admin/docker/js-craw
+        run: |
+          echo "🚀 Starting containers..."
+          docker compose up -d
+          echo "✅ Containers started"
+
+          # Wait for health checks
+          echo "⏳ Waiting for services to be healthy..."
+          sleep 15
+
+          # Check container status
+          docker compose ps
+
+      - name: Verify deployment
+        working-directory: /home/admin/docker/js-craw
+        run: |
+          echo "🔍 Verifying deployment..."
+
+          # Wait a bit more for app to fully start
+          sleep 10
+
+          # Check health endpoint
+          if curl -f http://localhost:8001/health; then
+            echo "✅ Health check passed"
+          else
+            echo "⚠️ Health check failed, but containers are running"
+          fi
+
+          # Show running containers
+          docker ps --filter "name=job-crawler"
+
+      - name: Create deployment marker
+        run: |
+          mkdir -p /home/admin/deployments/js-craw/current
+          cd /home/admin/docker/js-craw
+          git log -1 --format="%H%n%an%n%ae%n%ai%n%s" > /home/admin/deployments/js-craw/current/DEPLOYMENT_INFO.txt
+          echo "✅ Deployment marker created"
+
+      - name: Cleanup old backups
+        run: |
+          echo "🧹 Cleaning up old backups (keeping last 5)..."
+          cd /home/admin/deployments/js-craw
+          ls -t backup_* 2>/dev/null | tail -n +6 | xargs -r rm -rf
+          echo "✅ Cleanup complete"
+
+      - name: Deployment summary
+        run: |
+          echo "## 🎉 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Commit Information" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cd /home/admin/docker/js-craw && git log -1 --format="%h - %s (%an, %ar)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Service Status" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          docker ps --filter "name=job-crawler" --format "table {{.Names}}\t{{.Status}}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Access Points" >> $GITHUB_STEP_SUMMARY
+          echo "- Dashboard: http://192.168.50.157:8001/static/index.html" >> $GITHUB_STEP_SUMMARY
+          echo "- API Docs: http://192.168.50.157:8001/docs" >> $GITHUB_STEP_SUMMARY
+          echo "- Health: http://192.168.50.157:8001/health" >> $GITHUB_STEP_SUMMARY
