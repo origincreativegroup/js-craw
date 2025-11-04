@@ -10,14 +10,8 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Check current directory
-        run: |
-          echo "Current directory: $(pwd)"
-          echo "User: $(whoami)"
-          ls -la /home/admin/docker/js-craw
-
       - name: Pull latest code
-        working-directory: /home/admin/docker/js-craw
+        working-directory: /home/admin/js-craw
         run: |
           git fetch origin
           git reset --hard origin/main
@@ -29,7 +23,7 @@ jobs:
           echo "📦 Creating backup: backup_$timestamp"
 
           # Stop containers before backup
-          cd /home/admin/docker/js-craw
+          cd /home/admin/js-craw
           docker compose down
 
           # Backup directory structure
@@ -40,14 +34,14 @@ jobs:
           fi
 
       - name: Rebuild Docker images
-        working-directory: /home/admin/docker/js-craw
+        working-directory: /home/admin/js-craw
         run: |
           echo "🔨 Building Docker images..."
           docker compose build --no-cache
           echo "✅ Images rebuilt successfully"
 
       - name: Deploy updated containers
-        working-directory: /home/admin/docker/js-craw
+        working-directory: /home/admin/js-craw
         run: |
           echo "🚀 Starting containers..."
           docker compose up -d
@@ -61,7 +55,7 @@ jobs:
           docker compose ps
 
       - name: Verify deployment
-        working-directory: /home/admin/docker/js-craw
+        working-directory: /home/admin/js-craw
         run: |
           echo "🔍 Verifying deployment..."
 
@@ -81,7 +75,7 @@ jobs:
       - name: Create deployment marker
         run: |
           mkdir -p /home/admin/deployments/js-craw/current
-          cd /home/admin/docker/js-craw
+          cd /home/admin/js-craw
           git log -1 --format="%H%n%an%n%ae%n%ai%n%s" > /home/admin/deployments/js-craw/current/DEPLOYMENT_INFO.txt
           echo "✅ Deployment marker created"
 
@@ -98,7 +92,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Commit Information" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          cd /home/admin/docker/js-craw && git log -1 --format="%h - %s (%an, %ar)" >> $GITHUB_STEP_SUMMARY
+          cd /home/admin/js-craw && git log -1 --format="%h - %s (%an, %ar)" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Service Status" >> $GITHUB_STEP_SUMMARY
