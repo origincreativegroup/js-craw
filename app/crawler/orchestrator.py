@@ -28,14 +28,14 @@ class CrawlerOrchestrator:
     
     async def crawl_all_companies(self) -> List[Dict]:
         """
-        Crawl ALL active companies and filter results using AI.
-        All jobs are analyzed with AI filtering before being saved.
-        This is the base crawling functionality that crawls any available jobs.
+        Crawl ALL active companies and save jobs immediately.
+        AI analysis is done in batch processing after jobs are saved for speed.
         
         Returns:
             List of newly discovered jobs
         """
         all_results = []
+        all_new_job_ids = []  # Collect IDs for batch AI processing
         
         async with AsyncSessionLocal() as db:
             # Get all active companies
@@ -44,10 +44,7 @@ class CrawlerOrchestrator:
             )
             companies = result.scalars().all()
             
-            logger.info(f"Crawling all {len(companies)} active companies with AI filtering")
-            
-            # Get user profile once for all filtering
-            user_profile = await self.job_filter._get_user_profile_cached()
+            logger.info(f"Crawling all {len(companies)} active companies (saving jobs immediately, AI analysis in batch)")
             
             for company in companies:
                 log = CrawlLog(
@@ -65,21 +62,17 @@ class CrawlerOrchestrator:
                     jobs = await self._crawl_company(company)
                     logger.info(f"Found {len(jobs)} jobs from {company.name}")
                     
-                    # Apply AI filtering to all jobs (no search criteria filtering for base crawl)
-                    if jobs:
-                        logger.info(f"Applying AI filter to {len(jobs)} jobs from {company.name}")
-                        filtered_jobs = await self.job_filter.filter_jobs_batch(jobs, user_profile)
-                    else:
-                        filtered_jobs = []
-                    
-                    # Process and save filtered jobs (AI analysis already included in job data)
+                    # Save jobs IMMEDIATELY without AI analysis (for speed)
                     new_jobs = await self._process_company_jobs(
                         db, 
                         search=None,  # No search criteria
                         company=company, 
-                        jobs=filtered_jobs,
-                        skip_ai_analysis=True  # AI analysis already done
+                        jobs=jobs,  # Save all jobs, no filtering
+                        skip_ai_analysis=True  # Skip AI for now, do it in batch later
                     )
+                    
+                    # Collect job IDs for batch AI processing
+                    all_new_job_ids.extend([job.id for job in new_jobs])
                     
                     log.completed_at = datetime.utcnow()
                     log.status = 'completed'
@@ -95,10 +88,10 @@ class CrawlerOrchestrator:
                         'title': job.title,
                         'company': job.company,
                         'url': job.url,
-                        'ai_match_score': job.ai_match_score
+                        'ai_match_score': None  # Will be set by batch processing
                     } for job in new_jobs])
                     
-                    logger.info(f"✓ {company.name}: Found {len(jobs)} jobs, {len(filtered_jobs)} passed AI filter, {len(new_jobs)} new")
+                    logger.info(f"✓ {company.name}: Found {len(jobs)} jobs, saved {len(new_jobs)} new jobs (AI analysis pending)")
                     
                 except Exception as e:
                     logger.error(f"Error crawling company {company.name}: {e}", exc_info=True)
@@ -107,7 +100,13 @@ class CrawlerOrchestrator:
                 
                 await db.commit()
         
-        logger.info(f"Crawl complete: {len(all_results)} new jobs from all companies (all AI-filtered)")
+        # Batch process AI analysis on all new jobs (in background)
+        if all_new_job_ids:
+            logger.info(f"Starting batch AI analysis on {len(all_new_job_ids)} new jobs...")
+            # Run batch analysis in background (don't await to return immediately)
+            asyncio.create_task(self._batch_analyze_jobs(all_new_job_ids))
+        
+        logger.info(f"Crawl complete: {len(all_results)} new jobs saved (AI analysis running in background)")
         
         return all_results
 
@@ -480,3 +479,89 @@ class CrawlerOrchestrator:
                 logger.error(f"Error sending notifications: {e}")
 
         return new_jobs
+    
+    async def _batch_analyze_jobs(self, job_ids: List[int], batch_size: int = 10):
+        """
+        Batch analyze jobs with AI for speed.
+        Processes jobs in batches to avoid overwhelming the AI service.
+        
+        Args:
+            job_ids: List of job IDs to analyze
+            batch_size: Number of jobs to process in parallel per batch
+        """
+        if not job_ids:
+            return
+        
+        logger.info(f"Starting batch AI analysis: {len(job_ids)} jobs in batches of {batch_size}")
+        
+        async with AsyncSessionLocal() as db:
+            # Get user profile once for all jobs
+            user_profile = await self.job_filter._get_user_profile_cached()
+            
+            # Process jobs in batches
+            for i in range(0, len(job_ids), batch_size):
+                batch = job_ids[i:i + batch_size]
+                
+                try:
+                    # Get jobs from database
+                    result = await db.execute(
+                        select(Job).where(Job.id.in_(batch))
+                    )
+                    jobs = result.scalars().all()
+                    
+                    # Convert to dict format for AI analysis
+                    job_dicts = []
+                    for job in jobs:
+                        job_dict = {
+                            'id': job.id,
+                            'title': job.title,
+                            'company': job.company,
+                            'location': job.location,
+                            'job_type': job.job_type,
+                            'description': job.description or '',
+                            'url': job.url
+                        }
+                        job_dicts.append(job_dict)
+                    
+                    # Process batch in parallel
+                    tasks = []
+                    for job_dict in job_dicts:
+                        task = self._analyze_single_job(job_dict, user_profile, db)
+                        tasks.append(task)
+                    
+                    # Wait for batch to complete
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    # Commit batch
+                    await db.commit()
+                    
+                    logger.info(f"Batch AI analysis progress: {min(i + batch_size, len(job_ids))}/{len(job_ids)} jobs")
+                    
+                except Exception as e:
+                    logger.error(f"Error in batch AI analysis: {e}", exc_info=True)
+                    await db.rollback()
+        
+        logger.info(f"Batch AI analysis complete: {len(job_ids)} jobs analyzed")
+    
+    async def _analyze_single_job(self, job_dict: Dict, user_profile: Optional[Dict], db: AsyncSession):
+        """Analyze a single job and update it in the database"""
+        try:
+            # Use job filter to analyze
+            analysis_result = await self.job_filter.filter_job(job_dict)
+            
+            # Update job in database
+            result = await db.execute(
+                select(Job).where(Job.id == job_dict['id'])
+            )
+            job = result.scalar_one_or_none()
+            
+            if job:
+                job.ai_match_score = analysis_result.get('match_score', 50)
+                job.ai_recommended = analysis_result.get('recommended', False)
+                job.ai_summary = analysis_result.get('summary', '')
+                job.ai_pros = analysis_result.get('pros', [])
+                job.ai_cons = analysis_result.get('cons', [])
+                job.ai_keywords_matched = analysis_result.get('keywords_matched', [])
+                
+        except Exception as e:
+            logger.error(f"Error analyzing job {job_dict.get('id')}: {e}", exc_info=True)

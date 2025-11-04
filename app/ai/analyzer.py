@@ -193,3 +193,78 @@ Keep it concise and actionable."""
         for job in jobs:
             lines.append(f"- {job['title']} at {job['company']} ({job.get('location', 'Remote')})")
         return '\n'.join(lines)
+    
+    async def analyze_company_job_profile(self, job_data: Dict, company_name: str = None) -> Dict:
+        """
+        Enhanced analysis that builds a company profile and simplifies what they're looking for.
+        This provides a clearer, more actionable summary of the job and company needs.
+        """
+        company = company_name or job_data.get('company', 'Unknown Company')
+        description = job_data.get('description', 'No description available')
+        
+        prompt = f"""You are a career advisor analyzing a job posting. Your task is to:
+1. Build a profile about the company based on the job posting
+2. Simplify what the company is looking for into clear, actionable points
+3. Extract the key requirements in plain language
+
+Job Information:
+- Title: {job_data['title']}
+- Company: {company}
+- Location: {job_data.get('location', 'Not specified')}
+- Job Type: {job_data.get('job_type', 'Not specified')}
+
+Job Description:
+{description[:2000]}
+
+Provide your analysis in the following JSON format:
+{{
+    "company_profile": "A brief 2-3 sentence profile of what this company does based on the job posting",
+    "company_culture": "What the job posting reveals about the company culture and work environment",
+    "what_they_want": "A simplified, plain-language summary of what the company is looking for (1-2 sentences)",
+    "simplified_requirements": [
+        "Core requirement 1 in simple terms",
+        "Core requirement 2 in simple terms",
+        "Core requirement 3 in simple terms"
+    ],
+    "must_haves": ["Essential requirements that are non-negotiable"],
+    "nice_to_haves": ["Preferred qualifications that are flexible"],
+    "role_summary": "A clear, concise summary of what this role entails in 2-3 sentences",
+    "why_this_role": "Why someone might want this role (based on what the posting reveals)"
+}}
+
+Focus on:
+- Making requirements easy to understand
+- Highlighting what makes this company/role unique
+- Being specific and actionable
+- Avoiding jargon and corporate speak"""
+        
+        try:
+            analysis_text = await self._call_ollama(prompt)
+            analysis = self._parse_analysis(analysis_text)
+            
+            # Ensure all expected fields are present
+            if 'company_profile' not in analysis:
+                analysis['company_profile'] = f"Company profile for {company} based on job posting"
+            if 'what_they_want' not in analysis:
+                analysis['what_they_want'] = "Requirements extraction pending"
+            if 'simplified_requirements' not in analysis:
+                analysis['simplified_requirements'] = []
+            if 'must_haves' not in analysis:
+                analysis['must_haves'] = []
+            if 'nice_to_haves' not in analysis:
+                analysis['nice_to_haves'] = []
+                
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Error in company job profile analysis: {e}", exc_info=True)
+            return {
+                'company_profile': f"Company profile for {company}",
+                'company_culture': 'Information not available',
+                'what_they_want': 'Unable to extract requirements',
+                'simplified_requirements': [],
+                'must_haves': [],
+                'nice_to_haves': [],
+                'role_summary': job_data.get('title', 'Job role'),
+                'why_this_role': 'Analysis unavailable'
+            }

@@ -393,10 +393,12 @@ async def get_jobs(
             "url": j.url,
             "status": j.status,
             "is_new": j.is_new,
+            "description": j.description,
             "ai_match_score": j.ai_match_score,
             "ai_summary": j.ai_summary,
             "ai_pros": j.ai_pros,
             "ai_cons": j.ai_cons,
+            "ai_keywords_matched": j.ai_keywords_matched,
             "posted_date": j.posted_date.isoformat() if j.posted_date else None,
             "discovered_at": j.discovered_at.isoformat(),
         }
@@ -440,6 +442,42 @@ async def get_job(
         "posted_date": job.posted_date.isoformat() if job.posted_date else None,
         "discovered_at": job.discovered_at.isoformat(),
     }
+
+
+@router.post("/jobs/{job_id}/analyze")
+async def analyze_job(
+    job_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Re-analyze a job with enhanced company profile analysis"""
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    try:
+        from app.ai.analyzer import JobAnalyzer
+        analyzer = JobAnalyzer()
+        
+        job_data = {
+            'title': job.title,
+            'company': job.company,
+            'location': job.location,
+            'job_type': job.job_type,
+            'description': job.description or ''
+        }
+        
+        # Run enhanced company profile analysis
+        profile_analysis = await analyzer.analyze_company_job_profile(job_data, job.company)
+        
+        return {
+            "job_id": job.id,
+            "analysis": profile_analysis
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing job: {str(e)}")
 
 
 @router.patch("/jobs/{job_id}")

@@ -302,7 +302,7 @@
         /* Job Cards */
         .jobs-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
             gap: 20px;
         }
         
@@ -314,6 +314,7 @@
             transition: all 0.2s;
             border-left: 4px solid var(--primary);
             cursor: pointer;
+            position: relative;
         }
         
         .job-card:hover {
@@ -324,6 +325,10 @@
         .job-card.new {
             border-left-color: var(--success);
             background: linear-gradient(to right, #f0fdf4 0%, var(--card-bg) 4px);
+        }
+        
+        .job-card.expanded {
+            cursor: default;
         }
         
         .job-title {
@@ -345,6 +350,158 @@
             flex-wrap: wrap;
             font-size: 13px;
             color: var(--text-muted);
+        }
+        
+        .job-ai-insights {
+            margin-top: 16px;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border-left: 3px solid var(--primary);
+        }
+        
+        .job-ai-insights h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .company-profile {
+            margin-bottom: 16px;
+        }
+        
+        .company-profile-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        
+        .company-profile-text {
+            font-size: 14px;
+            color: var(--text);
+            line-height: 1.6;
+        }
+        
+        .requirements-list {
+            list-style: none;
+            padding: 0;
+            margin: 8px 0;
+        }
+        
+        .requirements-list li {
+            padding: 6px 0;
+            padding-left: 20px;
+            position: relative;
+            font-size: 14px;
+            color: var(--text);
+        }
+        
+        .requirements-list li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: var(--success);
+            font-weight: bold;
+        }
+        
+        .requirements-list.must-haves li:before {
+            content: "●";
+            color: var(--danger);
+        }
+        
+        .requirements-list.nice-to-have li:before {
+            content: "○";
+            color: var(--text-muted);
+        }
+        
+        .analyze-btn {
+            margin-top: 12px;
+            width: 100%;
+        }
+        
+        .loading-analysis {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-muted);
+        }
+        
+        .what-they-want {
+            background: #eff6ff;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 12px 0;
+            border-left: 3px solid var(--primary);
+        }
+        
+        .what-they-want-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--primary);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+        
+        .what-they-want-text {
+            font-size: 14px;
+            color: var(--text);
+            font-weight: 500;
+        }
+        
+        .ai-pending {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .ai-pending::before {
+            content: "⏳";
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .batch-progress {
+            background: #eff6ff;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            border-left: 3px solid var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .batch-progress.hidden {
+            display: none;
+        }
+        
+        .progress-bar {
+            flex: 1;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            transition: width 0.3s;
         }
         
         /* Recommendation Cards */
@@ -777,6 +934,14 @@
         <div id="dashboard" class="tab-content active">
             <div class="stats-grid" id="stats"></div>
             
+            <div id="batch-progress" class="batch-progress hidden">
+                <div style="font-size: 13px; font-weight: 600; color: var(--primary);">🤖 AI Analysis in Progress</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                </div>
+                <div id="progress-text" style="font-size: 12px; color: var(--text-muted); min-width: 80px; text-align: right;">0%</div>
+            </div>
+            
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title">Recent Crawl Activity</h2>
@@ -790,6 +955,7 @@
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title">Recent Jobs</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="loadDashboard()">Refresh</button>
                 </div>
                 <div id="recent-jobs" class="jobs-grid"></div>
             </div>
@@ -840,6 +1006,10 @@
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title">All Jobs</h2>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="text" id="job-search" placeholder="🔍 Search jobs..." style="width: 250px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;" onkeyup="searchJobs()">
+                        <button class="btn btn-secondary btn-sm" onclick="loadJobs()">Refresh</button>
+                    </div>
                 </div>
                 <div class="filter-chips" id="job-filters">
                     <span class="filter-chip active" data-status="" onclick="filterJobs('')">All</span>
@@ -980,6 +1150,7 @@
         let allCompanies = [];
         let currentJobFilter = '';
         let crawlStatusInterval = null;
+        let aiProgressInterval = null;
         
         // Toast notification
         function showToast(message, type = 'success') {
@@ -1099,6 +1270,32 @@
             }
         }
         
+        // Start polling for AI analysis progress
+        function startAiProgressPolling() {
+            // Poll every 5 seconds for AI progress
+            if (aiProgressInterval) {
+                clearInterval(aiProgressInterval);
+            }
+            aiProgressInterval = setInterval(() => {
+                // Refresh dashboard to update AI progress
+                if (document.getElementById('dashboard').classList.contains('active')) {
+                    loadDashboard();
+                }
+                // Refresh jobs list to update AI scores
+                if (document.getElementById('jobs').classList.contains('active')) {
+                    loadJobs();
+                }
+            }, 5000);
+        }
+        
+        // Stop AI progress polling
+        function stopAiProgressPolling() {
+            if (aiProgressInterval) {
+                clearInterval(aiProgressInterval);
+                aiProgressInterval = null;
+            }
+        }
+        
         // Tab switching
         function showTab(tabName, buttonElement) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -1136,6 +1333,14 @@
                 }
                 const stats = await statsRes.json();
                 
+                // Count jobs pending AI analysis
+                const jobsRes = await fetch(`${API_BASE}/jobs?limit=100`);
+                let pendingAiCount = 0;
+                if (jobsRes.ok) {
+                    const allJobs = await jobsRes.json();
+                    pendingAiCount = allJobs.filter(j => j.ai_match_score === null || j.ai_match_score === undefined).length;
+                }
+                
                 document.getElementById('stats').innerHTML = `
                     <div class="stat-card">
                         <div class="stat-value">${stats.total_jobs || 0}</div>
@@ -1154,17 +1359,38 @@
                         <div class="stat-label">Active Searches</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">🤖</div>
-                        <div class="stat-label">AI Filtering Enabled</div>
+                        <div class="stat-value">${pendingAiCount > 0 ? '⏳' : '🤖'}</div>
+                        <div class="stat-label">${pendingAiCount > 0 ? `${pendingAiCount} Pending AI` : 'AI Analysis Complete'}</div>
                     </div>
                 `;
                 
-                const jobsRes = await fetch(`${API_BASE}/jobs?limit=10`);
-                if (!jobsRes.ok) return;
-                const jobs = await jobsRes.json();
+                // Update batch progress indicator
+                updateBatchProgress(pendingAiCount, stats.total_jobs || 0);
+                
+                const recentJobsRes = await fetch(`${API_BASE}/jobs?limit=10`);
+                if (!recentJobsRes.ok) return;
+                const jobs = await recentJobsRes.json();
                 displayJobs(jobs, 'recent-jobs');
             } catch (error) {
                 console.error('Error loading dashboard:', error);
+            }
+        }
+        
+        // Update batch progress indicator
+        function updateBatchProgress(pendingCount, totalJobs) {
+            const progressEl = document.getElementById('batch-progress');
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            
+            if (pendingCount > 0 && totalJobs > 0) {
+                const completed = totalJobs - pendingCount;
+                const percent = Math.round((completed / totalJobs) * 100);
+                
+                progressEl.classList.remove('hidden');
+                progressFill.style.width = `${percent}%`;
+                progressText.textContent = `${percent}% (${completed}/${totalJobs})`;
+            } else {
+                progressEl.classList.add('hidden');
             }
         }
         
@@ -1429,12 +1655,16 @@
         }
         
         // Jobs
+        let allJobsData = [];
+        let expandedJobId = null;
+        
         async function loadJobs() {
             const url = currentJobFilter ? `${API_BASE}/jobs?status=${currentJobFilter}` : `${API_BASE}/jobs`;
             try {
                 const res = await fetch(url);
                 if (!res.ok) return;
                 const jobs = await res.json();
+                allJobsData = jobs;
                 displayJobs(jobs, 'jobs-list');
             } catch (error) {
                 console.error('Error loading jobs:', error);
@@ -1449,6 +1679,22 @@
             loadJobs();
         }
         
+        function searchJobs() {
+            const searchTerm = document.getElementById('job-search').value.toLowerCase();
+            let filtered = allJobsData;
+            
+            if (searchTerm) {
+                filtered = allJobsData.filter(job => 
+                    job.title.toLowerCase().includes(searchTerm) ||
+                    job.company.toLowerCase().includes(searchTerm) ||
+                    (job.location && job.location.toLowerCase().includes(searchTerm)) ||
+                    (job.description && job.description.toLowerCase().includes(searchTerm))
+                );
+            }
+            
+            displayJobs(filtered, 'jobs-list');
+        }
+        
         function displayJobs(jobs, containerId) {
             const container = document.getElementById(containerId);
             if (jobs.length === 0) {
@@ -1457,25 +1703,193 @@
             }
             
             container.innerHTML = jobs.map(job => {
-                const score = job.ai_match_score || 0;
-                const scoreClass = score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low';
+                const score = job.ai_match_score;
+                const hasAiScore = score !== null && score !== undefined;
+                const scoreClass = hasAiScore ? (score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low') : '';
+                const isExpanded = expandedJobId === job.id;
                 
                 return `
-                    <div class="job-card ${job.is_new ? 'new' : ''}" onclick="viewJob(${job.id})">
+                    <div class="job-card ${job.is_new ? 'new' : ''} ${isExpanded ? 'expanded' : ''}" onclick="toggleJobDetails(${job.id}, event)">
                         <div class="job-title">${job.title}</div>
                         <div class="job-company">${job.company} ${job.location ? '• ' + job.location : ''}</div>
                         <div class="job-meta">
-                            ${job.ai_match_score ? `<span class="match-score ${scoreClass}">Match: ${Math.round(score)}%</span>` : ''}
+                            ${hasAiScore ? `<span class="match-score ${scoreClass}">Match: ${Math.round(score)}%</span>` : '<span class="ai-pending">AI Analysis Pending</span>'}
                             <span>${new Date(job.discovered_at).toLocaleDateString()}</span>
                             ${job.is_new ? '<span class="badge badge-success">New</span>' : ''}
+                        </div>
+                        ${job.ai_summary ? `
+                            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+                                <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">AI Summary:</div>
+                                <div style="font-size: 14px; color: var(--text);">${job.ai_summary}</div>
+                            </div>
+                        ` : job.ai_match_score === null || job.ai_match_score === undefined ? `
+                            <div style="margin-top: 12px; padding: 12px; background: #fef3c7; border-radius: 6px; border-left: 3px solid #f59e0b;">
+                                <div style="font-size: 13px; color: #92400e; font-weight: 500;">⏳ AI analysis is being processed in the background</div>
+                                <div style="font-size: 12px; color: #92400e; margin-top: 4px;">This job will be analyzed automatically. Check back soon!</div>
+                            </div>
+                        ` : ''}
+                        ${isExpanded ? `
+                            <div class="job-ai-insights" id="job-insights-${job.id}">
+                                ${job.ai_match_score === null || job.ai_match_score === undefined ? 
+                                    '<div class="loading-analysis">⏳ AI analysis pending... This will be processed automatically.</div>' :
+                                    '<div class="loading-analysis">Loading detailed AI analysis...</div>'
+                                }
+                            </div>
+                        ` : `
+                            <button class="btn btn-primary btn-sm analyze-btn" onclick="analyzeJob(${job.id}, event); event.stopPropagation();">
+                                ${job.ai_match_score === null || job.ai_match_score === undefined ? '⏳ Waiting for AI Analysis' : '🤖 Analyze with AI'}
+                            </button>
+                        `}
+                        <div style="margin-top: 12px; display: flex; gap: 8px;">
+                            <a href="${job.url}" target="_blank" class="btn btn-secondary btn-sm" onclick="event.stopPropagation();">View Job</a>
+                            <button class="btn btn-success btn-sm" onclick="updateJobStatus(${job.id}, 'saved', event); event.stopPropagation();">Save</button>
                         </div>
                     </div>
                 `;
             }).join('');
+            
+            // If a job is expanded, load its analysis
+            if (expandedJobId) {
+                analyzeJob(expandedJobId, null, true);
+            }
+        }
+        
+        function toggleJobDetails(jobId, event) {
+            if (event && event.target.tagName === 'BUTTON' || event.target.tagName === 'A') {
+                return; // Don't toggle if clicking buttons
+            }
+            
+            if (expandedJobId === jobId) {
+                expandedJobId = null;
+            } else {
+                expandedJobId = jobId;
+            }
+            
+            // Re-render jobs to show/hide expanded view
+            displayJobs(allJobsData, 'jobs-list');
+        }
+        
+        async function analyzeJob(jobId, event, silent = false) {
+            if (event) event.stopPropagation();
+            
+            const insightsContainer = document.getElementById(`job-insights-${jobId}`);
+            if (!insightsContainer && !silent) {
+                // Expand the job first
+                expandedJobId = jobId;
+                displayJobs(allJobsData, 'jobs-list');
+                // Wait for DOM to update, then analyze
+                setTimeout(() => analyzeJob(jobId, null, true), 100);
+                return;
+            }
+            
+            if (!silent && insightsContainer) {
+                insightsContainer.innerHTML = '<div class="loading-analysis">🤖 Analyzing job with AI...</div>';
+            }
+            
+            try {
+                const res = await fetch(`${API_BASE}/jobs/${jobId}/analyze`, { method: 'POST' });
+                if (!res.ok) {
+                    if (insightsContainer) {
+                        insightsContainer.innerHTML = '<div style="color: var(--danger);">Error analyzing job</div>';
+                    }
+                    return;
+                }
+                
+                const data = await res.json();
+                const analysis = data.analysis;
+                
+                if (insightsContainer) {
+                    insightsContainer.innerHTML = `
+                        <h4>🤖 AI Company & Job Profile</h4>
+                        
+                        ${analysis.company_profile ? `
+                            <div class="company-profile">
+                                <div class="company-profile-title">Company Profile</div>
+                                <div class="company-profile-text">${analysis.company_profile}</div>
+                            </div>
+                        ` : ''}
+                        
+                        ${analysis.what_they_want ? `
+                            <div class="what-they-want">
+                                <div class="what-they-want-title">What They're Looking For</div>
+                                <div class="what-they-want-text">${analysis.what_they_want}</div>
+                            </div>
+                        ` : ''}
+                        
+                        ${analysis.simplified_requirements && analysis.simplified_requirements.length > 0 ? `
+                            <div style="margin-top: 16px;">
+                                <div class="company-profile-title">Key Requirements (Simplified)</div>
+                                <ul class="requirements-list">
+                                    ${analysis.simplified_requirements.map(req => `<li>${req}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        
+                        ${analysis.must_haves && analysis.must_haves.length > 0 ? `
+                            <div style="margin-top: 16px;">
+                                <div class="company-profile-title">Must Haves</div>
+                                <ul class="requirements-list must-haves">
+                                    ${analysis.must_haves.map(req => `<li>${req}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        
+                        ${analysis.nice_to_haves && analysis.nice_to_haves.length > 0 ? `
+                            <div style="margin-top: 16px;">
+                                <div class="company-profile-title">Nice to Have</div>
+                                <ul class="requirements-list nice-to-have">
+                                    ${analysis.nice_to_haves.map(req => `<li>${req}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        
+                        ${analysis.role_summary ? `
+                            <div style="margin-top: 16px; padding: 12px; background: #f0fdf4; border-radius: 6px;">
+                                <div class="company-profile-title" style="color: var(--success);">Role Summary</div>
+                                <div class="company-profile-text">${analysis.role_summary}</div>
+                            </div>
+                        ` : ''}
+                        
+                        ${analysis.why_this_role ? `
+                            <div style="margin-top: 16px; padding: 12px; background: #eff6ff; border-radius: 6px;">
+                                <div class="company-profile-title" style="color: var(--primary);">Why This Role?</div>
+                                <div class="company-profile-text">${analysis.why_this_role}</div>
+                            </div>
+                        ` : ''}
+                    `;
+                }
+                
+                if (!silent) {
+                    showToast('Job analyzed successfully');
+                }
+            } catch (error) {
+                console.error('Error analyzing job:', error);
+                if (insightsContainer) {
+                    insightsContainer.innerHTML = '<div style="color: var(--danger);">Error analyzing job. Please try again.</div>';
+                }
+                if (!silent) {
+                    showToast('Error analyzing job', 'error');
+                }
+            }
         }
         
         function viewJob(jobId) {
             window.open(`${API_BASE}/jobs/${jobId}`, '_blank');
+        }
+        
+        async function updateJobStatus(jobId, status, event) {
+            if (event) event.stopPropagation();
+            try {
+                await fetch(`${API_BASE}/jobs/${jobId}`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({status})
+                });
+                showToast('Job status updated');
+                loadJobs();
+            } catch (error) {
+                showToast('Error updating job', 'error');
+            }
         }
         
         // Follow-up Recommendations
@@ -1552,7 +1966,10 @@
         // Trigger crawl
         async function triggerCrawl(crawlType = 'searches') {
             const crawlTypeName = crawlType === 'all' ? 'Universal Crawl (all companies)' : 'Search-Based Crawl';
-            if (!confirm(`Start ${crawlTypeName} now?\n\n${crawlType === 'all' ? 'This will crawl all active companies and use AI to filter results.' : 'This will run all active searches.'}`)) return;
+            const message = crawlType === 'all' 
+                ? `Start ${crawlTypeName} now?\n\nJobs will be saved immediately and visible right away. AI analysis will run in the background automatically.`
+                : `Start ${crawlTypeName} now?\n\nThis will run all active searches.`;
+            if (!confirm(message)) return;
             
             try {
                 const url = crawlType === 'all' 
@@ -1591,16 +2008,18 @@
                     setTimeout(() => {
                         stopCrawlStatusPolling();
                         const message = crawlType === 'all' 
-                            ? `Universal crawl completed! Found ${data.new_jobs || 0} new jobs (AI-filtered).`
-                            : `Search crawl completed! Found ${data.new_jobs || 0} new jobs.`;
+                            ? `✅ Crawl completed! Saved ${data.new_jobs || 0} new jobs. AI analysis is running in the background - jobs will be analyzed automatically.`
+                            : `✅ Search crawl completed! Found ${data.new_jobs || 0} new jobs.`;
                         showToast(message, 'success');
                     }, 2000);
                 }, 1000);
                 
-                // Refresh dashboard and jobs
+                // Refresh dashboard and jobs immediately to show new jobs
                 setTimeout(() => {
                     loadDashboard();
                     loadJobs();
+                    // Start polling for AI analysis progress
+                    startAiProgressPolling();
                 }, 2000);
             } catch (error) {
                 stopCrawlStatusPolling();
@@ -1619,6 +2038,7 @@
         loadDashboard();
         loadCompanies();
         startCrawlStatusPolling(); // Start polling for crawl status
+        startAiProgressPolling(); // Start polling for AI analysis progress
     </script>
 </body>
 </html>
