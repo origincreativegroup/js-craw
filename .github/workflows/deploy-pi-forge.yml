@@ -10,16 +10,17 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Configure git safe directory
-        run: |
-          git config --global --add safe.directory /home/admin/js-craw
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Pull latest code
-        working-directory: /home/admin/js-craw
+      - name: Sync code to deployment directory
         run: |
-          git fetch origin
-          git reset --hard origin/main
-          echo "✅ Code updated to $(git log -1 --oneline)"
+          echo "📂 Syncing code to /home/admin/js-craw..."
+          rsync -av --delete \
+            --exclude='.git' \
+            --exclude='work' \
+            ./ /home/admin/js-craw/
+          echo "✅ Code synced to $(cd /home/admin/js-craw && git log -1 --oneline)"
 
       - name: Create backup of current deployment
         run: |
