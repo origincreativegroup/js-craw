@@ -169,6 +169,8 @@ async def create_search(
         await db.refresh(new_search)
         
         return {"id": new_search.id, "message": "Search criteria created"}
+    except HTTPException:
+        raise
     except IntegrityError as e:
         await db.rollback()
         raise HTTPException(status_code=400, detail=f"Database constraint error: {str(e)}")
