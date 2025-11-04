@@ -19,8 +19,9 @@ jobs:
           rsync -av --delete \
             --exclude='.git' \
             --exclude='work' \
+            --exclude='.env' \
             ./ /home/admin/js-craw/
-          echo "✅ Code synced to $(cd /home/admin/js-craw && git log -1 --oneline)"
+          echo "✅ Code synced (keeping existing .env)"
 
       - name: Create backup of current deployment
         run: |
