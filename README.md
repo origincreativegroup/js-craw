@@ -6,11 +6,22 @@ A comprehensive, production-ready job search automation system that crawls compa
 
 - **Automated Crawling**: Company career pages and curated job board searches
   every 30 minutes (configurable)
-- **AI Analysis**: Local LLM (Ollama) for intelligent job matching
+- **AI Analysis**: Local LLM (Ollama) for intelligent job matching and scoring
+- **AI Document Generation**: Automatically create tailored resumes and cover letters for top jobs
+- **Ollama Verification**: Comprehensive health checks to ensure AI is working correctly
 - **Mobile Notifications**: Push alerts via ntfy, Pushover, or Telegram
 - **Web Dashboard**: Clean, responsive UI for managing everything
 - **Secure Storage**: Encrypted credentials, PostgreSQL database
 - **Docker-Based**: One-command deployment
+
+### 🆕 New AI Enhancements
+
+- **Document Generator**: Automatically generate tailored resumes and cover letters using AI
+- **Ollama Verifier**: Verify and test Ollama connection and functionality
+- **Comprehensive Testing**: Full test suite for AI features
+- **Batch Processing**: Generate documents for multiple top-matched jobs
+
+See [AI Enhancements Summary](docs/AI_ENHANCEMENTS_SUMMARY.md) and [Ollama Verification Guide](docs/OLLAMA_VERIFICATION_GUIDE.md) for details.
 
 ## 📁 Project Structure
 
@@ -32,7 +43,10 @@ js-craw/
 │   │   └── orchestrator.py        # Coordinates crawlers
 │   ├── ai/                        # AI analysis
 │   │   ├── __init__.py
-│   │   └── analyzer.py            # Ollama integration
+│   │   ├── analyzer.py            # Job analysis with Ollama
+│   │   ├── job_filter.py          # AI-powered job filtering
+│   │   ├── document_generator.py  # Resume/cover letter generation
+│   │   └── ollama_verifier.py     # Ollama health checks
 │   ├── notifications/             # Notification services
 │   │   ├── __init__.py
 │   │   └── notifier.py            # Push notifications
@@ -46,7 +60,12 @@ js-craw/
 ├── docs/                          # Documentation
 │   ├── ARCHITECTURE.md            # Technical architecture
 │   ├── PROJECT_SUMMARY.md         # Project overview
-│   └── SETUP.md                   # Setup guide
+│   ├── SETUP.md                   # Setup guide
+│   ├── AI_ENHANCEMENTS_SUMMARY.md # AI features summary
+│   └── OLLAMA_VERIFICATION_GUIDE.md # Ollama setup & usage guide
+├── tests/                         # Test suite
+│   └── test_ollama_integration.py # Ollama integration tests
+├── verify_ollama.py               # Ollama verification CLI tool
 ├── main.py                        # Application entry point
 ├── Dockerfile                     # Docker image definition
 ├── docker-compose.yml             # Docker services orchestration
