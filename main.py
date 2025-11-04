@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
     # Create orchestrator
     orchestrator = CrawlerOrchestrator()
     app.state.crawler = orchestrator
+    app.state.scheduler = scheduler  # Expose scheduler to API endpoints
     logger.info("Crawler orchestrator initialized")
     
     # Start scheduler - Phase 2: Crawl all companies (simplified approach)

@@ -882,6 +882,278 @@
             border-left: 4px solid var(--danger);
         }
         
+        /* Automation Command Center Styles */
+        .automation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding: 20px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+        }
+        
+        .automation-status {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        
+        .status-badge.running {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        
+        .status-badge.idle {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .status-badge.paused {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .health-chips-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .health-chip {
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            border-left: 4px solid var(--success);
+            transition: all 0.2s;
+        }
+        
+        .health-chip:hover {
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-2px);
+        }
+        
+        .health-chip.warning {
+            border-left-color: var(--warning);
+        }
+        
+        .health-chip.error {
+            border-left-color: var(--danger);
+        }
+        
+        .health-chip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .health-chip-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text);
+        }
+        
+        .health-chip-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        .health-chip-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        .telemetry-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+        }
+        
+        .telemetry-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .progress-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 12px;
+        }
+        
+        .progress-text {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+        
+        .timeline-container {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .timeline-item {
+            display: flex;
+            gap: 16px;
+            padding: 12px;
+            border-left: 3px solid var(--border);
+            margin-bottom: 12px;
+            transition: all 0.2s;
+        }
+        
+        .timeline-item:hover {
+            background: #f8fafc;
+            border-left-color: var(--primary);
+        }
+        
+        .timeline-item.completed {
+            border-left-color: var(--success);
+        }
+        
+        .timeline-item.failed {
+            border-left-color: var(--danger);
+        }
+        
+        .timeline-item.running {
+            border-left-color: var(--primary);
+            animation: pulse 2s infinite;
+        }
+        
+        .timeline-time {
+            font-size: 12px;
+            color: var(--text-muted);
+            min-width: 80px;
+        }
+        
+        .timeline-content {
+            flex: 1;
+        }
+        
+        .timeline-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        
+        .timeline-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        .drill-down-panel {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+        
+        .drill-down-header {
+            padding: 16px 20px;
+            background: #f8fafc;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+        
+        .drill-down-header:hover {
+            background: #f1f5f9;
+        }
+        
+        .drill-down-header.active {
+            background: #eff6ff;
+        }
+        
+        .drill-down-content {
+            padding: 20px;
+            display: none;
+        }
+        
+        .drill-down-content.active {
+            display: block;
+        }
+        
+        .company-status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .company-status-item:last-child {
+            border-bottom: none;
+        }
+        
+        .company-status-name {
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        .company-status-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .control-panel {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .control-group label {
+            min-width: 120px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        .control-group input[type="number"] {
+            width: 100px;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        
+        .control-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
         /* Responsive */
         @media (max-width: 768px) {
             .container {
@@ -894,12 +1166,18 @@
             
             .stats-grid,
             .companies-grid,
-            .jobs-grid {
+            .jobs-grid,
+            .health-chips-grid {
                 grid-template-columns: 1fr;
             }
             
             .tabs {
                 overflow-x: auto;
+            }
+            
+            .automation-header {
+                flex-direction: column;
+                align-items: flex-start;
             }
         }
     </style>
@@ -930,28 +1208,92 @@
             <button class="tab" onclick="showTab('settings', this)">Settings</button>
         </div>
         
-        <!-- Dashboard Tab -->
+        <!-- Dashboard Tab - Automation Command Center -->
         <div id="dashboard" class="tab-content active">
-            <div class="stats-grid" id="stats"></div>
-            
-            <div id="batch-progress" class="batch-progress hidden">
-                <div style="font-size: 13px; font-weight: 600; color: var(--primary);">🤖 AI Analysis in Progress</div>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+            <!-- Automation Header -->
+            <div class="automation-header">
+                <div class="automation-status">
+                    <h2 style="font-size: 24px; margin-right: 16px;">Automation Command Center</h2>
+                    <span id="automation-status-badge" class="status-badge idle">Idle</span>
+                    <span id="next-run-eta" style="font-size: 13px; color: var(--text-muted);"></span>
                 </div>
-                <div id="progress-text" style="font-size: 12px; color: var(--text-muted); min-width: 80px; text-align: right;">0%</div>
+                <div>
+                    <button class="btn btn-primary btn-sm" onclick="showCrawlOptions()">⚙️ Crawl Options</button>
+                </div>
             </div>
             
+            <!-- Automation Health Chips -->
+            <div class="health-chips-grid" id="health-chips"></div>
+            
+            <!-- Real-Time Telemetry -->
+            <div class="telemetry-card" id="current-run-card" style="display: none;">
+                <div class="telemetry-card-header">
+                    <h3 style="font-size: 18px; font-weight: 600;">Current Run</h3>
+                </div>
+                <div id="current-run-content"></div>
+            </div>
+            
+            <div class="telemetry-card">
+                <div class="telemetry-card-header">
+                    <h3 style="font-size: 18px; font-weight: 600;">Next Scheduled Run</h3>
+                </div>
+                <div id="next-run-content"></div>
+            </div>
+            
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <h3 style="font-size: 18px; font-weight: 600; margin-bottom: 16px;">Automation Controls</h3>
+                <div class="control-group">
+                    <label>Crawl Interval:</label>
+                    <input type="number" id="interval-input" min="1" value="30" style="width: 100px;">
+                    <span style="font-size: 14px; color: var(--text-muted);">minutes</span>
+                    <button class="btn btn-primary btn-sm" onclick="updateInterval()">Update</button>
+                </div>
+                <div class="control-actions">
+                    <button class="btn btn-secondary btn-sm" id="pause-resume-btn" onclick="toggleScheduler()">Pause</button>
+                    <button class="btn btn-danger btn-sm" onclick="cancelCrawl()" id="cancel-btn" style="display: none;">Cancel Running Crawl</button>
+                    <button class="btn btn-primary btn-sm" onclick="triggerCrawl('searches')">Run Search Crawl</button>
+                    <button class="btn btn-success btn-sm" onclick="triggerCrawl('all')">Run Universal Crawl</button>
+                </div>
+            </div>
+            
+            <!-- Timeline/Event Stream -->
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">Recent Crawl Activity</h2>
-                    <button class="btn btn-secondary btn-sm" onclick="loadCrawlStatus()">Refresh</button>
+                    <h2 class="card-title">Automation Timeline</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="loadAutomationTimeline()">Refresh</button>
                 </div>
-                <div id="crawl-activity" class="crawl-activity">
-                    <div class="loading">Loading crawl status...</div>
+                <div class="timeline-container" id="timeline-container">
+                    <div class="loading">Loading timeline...</div>
                 </div>
             </div>
             
+            <!-- Drill-Down Panels -->
+            <div class="drill-down-panel">
+                <div class="drill-down-header" onclick="toggleDrillDown('selenium-panel')">
+                    <h3 style="font-size: 16px; font-weight: 600;">🔍 Selenium-Based Crawlers (Indeed, LinkedIn)</h3>
+                    <span id="selenium-panel-toggle">▼</span>
+                </div>
+                <div class="drill-down-content" id="selenium-panel"></div>
+            </div>
+            
+            <div class="drill-down-panel">
+                <div class="drill-down-header" onclick="toggleDrillDown('api-panel')">
+                    <h3 style="font-size: 16px; font-weight: 600;">⚡ API-Based Crawlers (Greenhouse, Lever)</h3>
+                    <span id="api-panel-toggle">▼</span>
+                </div>
+                <div class="drill-down-content" id="api-panel"></div>
+            </div>
+            
+            <div class="drill-down-panel">
+                <div class="drill-down-header" onclick="toggleDrillDown('ai-panel')">
+                    <h3 style="font-size: 16px; font-weight: 600;">🤖 AI-Assisted Crawlers (Generic)</h3>
+                    <span id="ai-panel-toggle">▼</span>
+                </div>
+                <div class="drill-down-content" id="ai-panel"></div>
+            </div>
+            
+            <!-- Recent Jobs (keep for compatibility) -->
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title">Recent Jobs</h2>
@@ -2034,11 +2376,418 @@
             alert('CSV import feature coming soon! Use the seed script: python scripts/seed_companies.py');
         }
         
+        // Automation Command Center Functions
+        let automationPollingInterval = null;
+        let schedulerPollingInterval = null;
+        
+        async function loadAutomationCommandCenter() {
+            await Promise.all([
+                loadAutomationStatus(),
+                loadSchedulerMetadata(),
+                loadAutomationHealthChips(),
+                loadAutomationTimeline(),
+                loadDrillDownPanels()
+            ]);
+        }
+        
+        async function loadAutomationStatus() {
+            try {
+                const [statusRes, schedulerRes] = await Promise.all([
+                    fetch(`${API_BASE}/crawl/status`),
+                    fetch(`${API_BASE}/automation/scheduler`)
+                ]);
+                
+                if (!statusRes.ok || !schedulerRes.ok) return;
+                
+                const status = await statusRes.json();
+                const scheduler = await schedulerRes.json();
+                
+                // Update status badge
+                const badge = document.getElementById('automation-status-badge');
+                const cancelBtn = document.getElementById('cancel-btn');
+                
+                if (status.is_running) {
+                    badge.className = 'status-badge running';
+                    badge.textContent = `Running (${status.running_count} active)`;
+                    cancelBtn.style.display = 'inline-flex';
+                } else {
+                    badge.className = scheduler.is_paused ? 'status-badge paused' : 'status-badge idle';
+                    badge.textContent = scheduler.is_paused ? 'Paused' : 'Idle';
+                    cancelBtn.style.display = 'none';
+                }
+                
+                // Update next run ETA
+                const nextRunEl = document.getElementById('next-run-eta');
+                if (scheduler.next_run) {
+                    const nextRun = new Date(scheduler.next_run);
+                    const now = new Date();
+                    const diff = nextRun - now;
+                    const minutes = Math.floor(diff / 60000);
+                    if (minutes > 0) {
+                        nextRunEl.textContent = `Next run: ${minutes}m`;
+                    } else {
+                        nextRunEl.textContent = 'Next run: Soon';
+                    }
+                } else {
+                    nextRunEl.textContent = '';
+                }
+                
+                // Update current run card
+                const currentRunCard = document.getElementById('current-run-card');
+                const currentRunContent = document.getElementById('current-run-content');
+                
+                if (status.is_running && status.current_company) {
+                    currentRunCard.style.display = 'block';
+                    const progress = status.progress || {current: 0, total: 0};
+                    const eta = status.eta_seconds ? formatDuration(status.eta_seconds) : 'Calculating...';
+                    
+                    currentRunContent.innerHTML = `
+                        <div style="margin-bottom: 12px;">
+                            <div style="font-size: 14px; color: var(--text-muted); margin-bottom: 4px;">Current Company:</div>
+                            <div style="font-size: 16px; font-weight: 600;">${status.current_company}</div>
+                        </div>
+                        <div style="margin-bottom: 12px;">
+                            <div style="font-size: 14px; color: var(--text-muted); margin-bottom: 4px;">Progress:</div>
+                            <div style="font-size: 16px; font-weight: 600;">${progress.current} of ${progress.total} companies</div>
+                            <div class="progress-bar" style="margin-top: 8px;">
+                                <div class="progress-fill" style="width: ${(progress.current / progress.total * 100)}%"></div>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 12px;">
+                            <div style="font-size: 14px; color: var(--text-muted); margin-bottom: 4px;">Queue Length:</div>
+                            <div style="font-size: 16px; font-weight: 600;">${status.queue_length} remaining</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 14px; color: var(--text-muted); margin-bottom: 4px;">Estimated Completion:</div>
+                            <div style="font-size: 16px; font-weight: 600;">${eta}</div>
+                        </div>
+                    `;
+                } else {
+                    currentRunCard.style.display = 'none';
+                }
+                
+                // Update next run content
+                const nextRunContent = document.getElementById('next-run-content');
+                if (scheduler.next_run) {
+                    const nextRun = new Date(scheduler.next_run);
+                    nextRunContent.innerHTML = `
+                        <div style="margin-bottom: 8px;">
+                            <div style="font-size: 14px; color: var(--text-muted); margin-bottom: 4px;">Scheduled Time:</div>
+                            <div style="font-size: 16px; font-weight: 600;">${nextRun.toLocaleString()}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 14px; color: var(--text-muted); margin-bottom: 4px;">Interval:</div>
+                            <div style="font-size: 16px; font-weight: 600;">${scheduler.interval_minutes} minutes</div>
+                        </div>
+                    `;
+                } else {
+                    nextRunContent.innerHTML = '<div style="color: var(--text-muted);">No scheduled runs</div>';
+                }
+                
+            } catch (error) {
+                console.error('Error loading automation status:', error);
+            }
+        }
+        
+        async function loadSchedulerMetadata() {
+            try {
+                const res = await fetch(`${API_BASE}/automation/scheduler`);
+                if (!res.ok) return;
+                const scheduler = await res.json();
+                
+                // Update interval input
+                const intervalInput = document.getElementById('interval-input');
+                if (intervalInput) {
+                    intervalInput.value = scheduler.interval_minutes || 30;
+                }
+                
+                // Update pause/resume button
+                const pauseResumeBtn = document.getElementById('pause-resume-btn');
+                if (pauseResumeBtn) {
+                    pauseResumeBtn.textContent = scheduler.is_paused ? 'Resume' : 'Pause';
+                }
+            } catch (error) {
+                console.error('Error loading scheduler metadata:', error);
+            }
+        }
+        
+        async function loadAutomationHealthChips() {
+            try {
+                const [statusRes, schedulerRes] = await Promise.all([
+                    fetch(`${API_BASE}/crawl/status`),
+                    fetch(`${API_BASE}/automation/scheduler`)
+                ]);
+                
+                if (!statusRes.ok || !schedulerRes.ok) return;
+                
+                const status = await statusRes.json();
+                const scheduler = await schedulerRes.json();
+                const health = status.crawler_health || {};
+                
+                const chipsContainer = document.getElementById('health-chips');
+                
+                // Universal Crawl health chip
+                const allHealth = Object.values(health);
+                const avgSuccessRate = allHealth.length > 0 
+                    ? allHealth.reduce((sum, h) => sum + (h.success_rate || 0), 0) / allHealth.length 
+                    : 0;
+                const universalStatus = avgSuccessRate >= 90 ? '' : avgSuccessRate >= 70 ? 'warning' : 'error';
+                
+                chipsContainer.innerHTML = `
+                    <div class="health-chip ${universalStatus}">
+                        <div class="health-chip-header">
+                            <span class="health-chip-title">Universal Crawl</span>
+                            <span class="health-chip-value">${avgSuccessRate.toFixed(1)}%</span>
+                        </div>
+                        <div class="health-chip-meta">
+                            Success Rate • ${scheduler.interval_minutes || 30}min interval
+                        </div>
+                    </div>
+                    ${Object.entries(health).map(([type, metrics]) => {
+                        const status = metrics.success_rate >= 90 ? '' : metrics.success_rate >= 70 ? 'warning' : 'error';
+                        const typeLabel = type === 'selenium' ? 'Selenium' : type === 'api' ? 'API' : type === 'ai' ? 'AI' : type;
+                        return `
+                            <div class="health-chip ${status}">
+                                <div class="health-chip-header">
+                                    <span class="health-chip-title">${typeLabel} Crawlers</span>
+                                    <span class="health-chip-value">${metrics.success_rate.toFixed(1)}%</span>
+                                </div>
+                                <div class="health-chip-meta">
+                                    ${metrics.total_runs || 0} runs • ${metrics.avg_duration_seconds.toFixed(1)}s avg
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                `;
+            } catch (error) {
+                console.error('Error loading health chips:', error);
+            }
+        }
+        
+        async function loadAutomationTimeline() {
+            try {
+                const res = await fetch(`${API_BASE}/crawl/logs?limit=50&hours=24`);
+                if (!res.ok) return;
+                const data = await res.json();
+                
+                const container = document.getElementById('timeline-container');
+                
+                if (data.events.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><p>No automation events in the last 24 hours</p></div>';
+                    return;
+                }
+                
+                container.innerHTML = data.events.map(event => {
+                    const time = new Date(event.timestamp);
+                    const statusClass = event.status === 'completed' ? 'completed' : 
+                                      event.status === 'failed' ? 'failed' : 
+                                      event.status === 'running' ? 'running' : '';
+                    const duration = event.duration_seconds ? ` • ${formatDuration(event.duration_seconds)}` : '';
+                    
+                    return `
+                        <div class="timeline-item ${statusClass}">
+                            <div class="timeline-time">${time.toLocaleTimeString()}</div>
+                            <div class="timeline-content">
+                                <div class="timeline-title">
+                                    ${event.company_name || 'Unknown Company'} 
+                                    ${event.crawler_class ? `(${event.crawler_class.toUpperCase()})` : ''}
+                                </div>
+                                <div class="timeline-meta">
+                                    ${event.status} • ${event.jobs_found || 0} jobs found${event.new_jobs ? ` • ${event.new_jobs} new` : ''}${duration}
+                                    ${event.error_message ? `<br><span style="color: var(--danger);">${event.error_message}</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Error loading timeline:', error);
+            }
+        }
+        
+        async function loadDrillDownPanels() {
+            try {
+                const res = await fetch(`${API_BASE}/companies`);
+                if (!res.ok) return;
+                const companies = await res.json();
+                
+                const seleniumCompanies = companies.filter(c => ['indeed', 'linkedin'].includes(c.crawler_type));
+                const apiCompanies = companies.filter(c => ['greenhouse', 'lever'].includes(c.crawler_type));
+                const aiCompanies = companies.filter(c => ['generic', 'workday'].includes(c.crawler_type));
+                
+                // Load recent logs for each company
+                const logsRes = await fetch(`${API_BASE}/crawl/logs?limit=200&hours=24`);
+                const logsData = logsRes.ok ? await logsRes.json() : {events: []};
+                
+                const companyLogs = {};
+                logsData.events.forEach(log => {
+                    if (log.company_id) {
+                        if (!companyLogs[log.company_id]) {
+                            companyLogs[log.company_id] = [];
+                        }
+                        companyLogs[log.company_id].push(log);
+                    }
+                });
+                
+                function renderCompanyList(companies, containerId) {
+                    const container = document.getElementById(containerId);
+                    if (companies.length === 0) {
+                        container.innerHTML = '<div style="color: var(--text-muted); padding: 12px;">No companies in this category</div>';
+                        return;
+                    }
+                    
+                    container.innerHTML = companies.map(company => {
+                        const logs = companyLogs[company.id] || [];
+                        const lastLog = logs[0];
+                        const status = lastLog ? lastLog.status : 'unknown';
+                        const statusClass = status === 'completed' ? 'badge-success' : 
+                                          status === 'failed' ? 'badge-warning' : 
+                                          status === 'running' ? 'badge-primary' : 'badge-secondary';
+                        const statusText = status === 'completed' ? '✓' : status === 'failed' ? '✗' : status === 'running' ? '🔄' : '○';
+                        
+                        return `
+                            <div class="company-status-item">
+                                <div>
+                                    <div class="company-status-name">${company.name}</div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                                        ${lastLog ? new Date(lastLog.timestamp).toLocaleString() : 'Never crawled'}
+                                    </div>
+                                </div>
+                                <span class="company-status-badge ${statusClass}">${statusText} ${status}</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+                
+                renderCompanyList(seleniumCompanies, 'selenium-panel');
+                renderCompanyList(apiCompanies, 'api-panel');
+                renderCompanyList(aiCompanies, 'ai-panel');
+            } catch (error) {
+                console.error('Error loading drill-down panels:', error);
+            }
+        }
+        
+        function toggleDrillDown(panelId) {
+            const panel = document.getElementById(panelId);
+            const header = panel.previousElementSibling;
+            const toggle = header.querySelector('span');
+            
+            panel.classList.toggle('active');
+            header.classList.toggle('active');
+            toggle.textContent = panel.classList.contains('active') ? '▲' : '▼';
+        }
+        
+        async function updateInterval() {
+            const input = document.getElementById('interval-input');
+            const minutes = parseInt(input.value);
+            
+            if (isNaN(minutes) || minutes < 1) {
+                showToast('Interval must be at least 1 minute', 'error');
+                return;
+            }
+            
+            try {
+                const res = await fetch(`${API_BASE}/automation/scheduler`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({interval_minutes: minutes})
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    showToast(error.detail || 'Error updating interval', 'error');
+                    return;
+                }
+                
+                showToast(`Crawl interval updated to ${minutes} minutes`);
+                loadSchedulerMetadata();
+            } catch (error) {
+                showToast('Error updating interval', 'error');
+            }
+        }
+        
+        async function toggleScheduler() {
+            const btn = document.getElementById('pause-resume-btn');
+            const isPaused = btn.textContent === 'Resume';
+            
+            try {
+                const endpoint = isPaused ? '/automation/resume' : '/automation/pause';
+                const res = await fetch(`${API_BASE}${endpoint}`, {method: 'POST'});
+                
+                if (!res.ok) {
+                    showToast('Error toggling scheduler', 'error');
+                    return;
+                }
+                
+                showToast(`Scheduler ${isPaused ? 'resumed' : 'paused'}`);
+                loadSchedulerMetadata();
+                loadAutomationStatus();
+            } catch (error) {
+                showToast('Error toggling scheduler', 'error');
+            }
+        }
+        
+        async function cancelCrawl() {
+            if (!confirm('Cancel the currently running crawl?')) return;
+            
+            try {
+                const res = await fetch(`${API_BASE}/crawl/cancel`, {method: 'POST'});
+                if (!res.ok) {
+                    showToast('Error cancelling crawl', 'error');
+                    return;
+                }
+                showToast('Crawl cancellation requested');
+                setTimeout(() => loadAutomationStatus(), 1000);
+            } catch (error) {
+                showToast('Error cancelling crawl', 'error');
+            }
+        }
+        
+        function formatDuration(seconds) {
+            if (seconds < 60) return `${seconds}s`;
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            if (minutes < 60) return `${minutes}m ${secs}s`;
+            const hours = Math.floor(minutes / 60);
+            const mins = minutes % 60;
+            return `${hours}h ${mins}m`;
+        }
+        
+        function startAutomationPolling() {
+            if (automationPollingInterval) clearInterval(automationPollingInterval);
+            if (schedulerPollingInterval) clearInterval(schedulerPollingInterval);
+            
+            loadAutomationCommandCenter(); // Load immediately
+            automationPollingInterval = setInterval(() => {
+                if (document.getElementById('dashboard').classList.contains('active')) {
+                    loadAutomationStatus();
+                    loadAutomationHealthChips();
+                }
+            }, 3000); // Poll every 3 seconds
+            
+            schedulerPollingInterval = setInterval(() => {
+                if (document.getElementById('dashboard').classList.contains('active')) {
+                    loadSchedulerMetadata();
+                }
+            }, 10000); // Poll every 10 seconds
+        }
+        
+        // Wrap showTab to load automation command center
+        const originalShowTab = window.showTab || showTab;
+        window.showTab = function(tabName, buttonElement) {
+            if (originalShowTab) originalShowTab(tabName, buttonElement);
+            if (tabName === 'dashboard') {
+                loadAutomationCommandCenter();
+                startAutomationPolling();
+            }
+        };
+        
         // Initial load
         loadDashboard();
         loadCompanies();
         startCrawlStatusPolling(); // Start polling for crawl status
         startAiProgressPolling(); // Start polling for AI analysis progress
+        startAutomationPolling(); // Start polling for automation command center
     </script>
 </body>
 </html>

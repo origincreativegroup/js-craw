@@ -800,11 +800,14 @@ async def get_stats(
 # Crawl status endpoint
 @router.get("/crawl/status")
 async def get_crawl_status(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(10, description="Number of recent crawl logs to return")
 ):
-    """Get recent crawl status and logs"""
+    """Get recent crawl status and logs with enhanced telemetry"""
     try:
+        orchestrator = request.app.state.crawler
+        
         # Get recent crawl logs
         result = await db.execute(
             select(CrawlLog)
@@ -825,9 +828,52 @@ async def get_crawl_status(
         )
         active_companies = total_companies.scalar() or 0
         
+        # Get orchestrator progress
+        progress = orchestrator.get_current_progress()
+        
+        # Get crawler type breakdown from recent logs
+        crawler_type_stats = {}
+        for log in logs[:50]:  # Analyze last 50 logs
+            if log.company_id:
+                company_result = await db.execute(
+                    select(Company).where(Company.id == log.company_id)
+                )
+                company = company_result.scalar_one_or_none()
+                if company:
+                    crawler_class = orchestrator.get_crawler_type_classification(company.crawler_type)
+                    if crawler_class not in crawler_type_stats:
+                        crawler_type_stats[crawler_class] = {'total': 0, 'success': 0, 'failed': 0, 'avg_duration': 0}
+                    crawler_type_stats[crawler_class]['total'] += 1
+                    if log.status == 'completed':
+                        crawler_type_stats[crawler_class]['success'] += 1
+                    elif log.status == 'failed':
+                        crawler_type_stats[crawler_class]['failed'] += 1
+                    if log.completed_at and log.started_at:
+                        duration = (log.completed_at - log.started_at).total_seconds()
+                        # Simple moving average
+                        current_avg = crawler_type_stats[crawler_class]['avg_duration']
+                        count = crawler_type_stats[crawler_class]['total']
+                        crawler_type_stats[crawler_class]['avg_duration'] = (current_avg * (count - 1) + duration) / count
+        
+        # Calculate health metrics
+        health_metrics = {}
+        for crawler_type, stats in crawler_type_stats.items():
+            success_rate = (stats['success'] / stats['total'] * 100) if stats['total'] > 0 else 0
+            health_metrics[crawler_type] = {
+                'success_rate': round(success_rate, 1),
+                'avg_duration_seconds': round(stats['avg_duration'], 1),
+                'error_count': stats['failed'],
+                'total_runs': stats['total']
+            }
+        
         return {
             "is_running": len(running_logs) > 0,
             "running_count": len(running_logs),
+            "queue_length": progress.get('queue_length', 0),
+            "current_company": progress.get('current_company'),
+            "progress": progress.get('progress', {'current': 0, 'total': 0}),
+            "eta_seconds": progress.get('eta_seconds'),
+            "run_type": progress.get('run_type'),
             "recent_logs": [
                 {
                     "id": log.id,
@@ -839,14 +885,194 @@ async def get_crawl_status(
                     "completed_at": log.completed_at.isoformat() if log.completed_at else None,
                     "jobs_found": log.jobs_found,
                     "new_jobs": log.new_jobs,
-                    "error_message": log.error_message
+                    "error_message": log.error_message,
+                    "duration_seconds": (log.completed_at - log.started_at).total_seconds() if log.completed_at and log.started_at else None
                 }
                 for log in logs
             ],
-            "active_companies": active_companies
+            "active_companies": active_companies,
+            "crawler_health": health_metrics
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading crawl status: {str(e)}")
+
+
+# Scheduler metadata endpoint
+@router.get("/automation/scheduler")
+async def get_scheduler_metadata(request: Request):
+    """Get scheduler status and metadata"""
+    try:
+        scheduler = request.app.state.scheduler
+        from app.config import settings
+        
+        job = scheduler.get_job("crawl_all_companies")
+        
+        if not job:
+            return {
+                "status": "not_configured",
+                "next_run": None,
+                "interval_minutes": None,
+                "is_paused": True
+            }
+        
+        next_run = job.next_run_time.isoformat() if job.next_run_time else None
+        
+        return {
+            "status": "running" if scheduler.running else "stopped",
+            "next_run": next_run,
+            "interval_minutes": settings.CRAWL_INTERVAL_MINUTES,
+            "is_paused": job.next_run_time is None,
+            "job_id": job.id,
+            "job_name": job.name
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading scheduler metadata: {str(e)}")
+
+
+# Scheduler control endpoints
+class SchedulerUpdate(BaseModel):
+    interval_minutes: Optional[int] = None
+
+
+@router.patch("/automation/scheduler")
+async def update_scheduler(
+    request: Request,
+    update: SchedulerUpdate
+):
+    """Update scheduler interval"""
+    try:
+        scheduler = request.app.state.scheduler
+        orchestrator = request.app.state.crawler
+        from app.config import settings
+        from apscheduler.triggers.interval import IntervalTrigger
+        
+        if update.interval_minutes is None:
+            raise HTTPException(status_code=400, detail="interval_minutes is required")
+        
+        if update.interval_minutes < 1:
+            raise HTTPException(status_code=400, detail="Interval must be at least 1 minute")
+        
+        # Update the job trigger
+        scheduler.modify_job(
+            "crawl_all_companies",
+            trigger=IntervalTrigger(minutes=update.interval_minutes)
+        )
+        
+        # Update settings (in-memory only, doesn't persist to .env)
+        settings.CRAWL_INTERVAL_MINUTES = update.interval_minutes
+        
+        return {
+            "message": "Scheduler interval updated",
+            "interval_minutes": update.interval_minutes
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating scheduler: {str(e)}")
+
+
+@router.post("/automation/pause")
+async def pause_scheduler(request: Request):
+    """Pause the scheduler"""
+    try:
+        scheduler = request.app.state.scheduler
+        scheduler.pause_job("crawl_all_companies")
+        return {"message": "Scheduler paused"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error pausing scheduler: {str(e)}")
+
+
+@router.post("/automation/resume")
+async def resume_scheduler(request: Request):
+    """Resume the scheduler"""
+    try:
+        scheduler = request.app.state.scheduler
+        scheduler.resume_job("crawl_all_companies")
+        return {"message": "Scheduler resumed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error resuming scheduler: {str(e)}")
+
+
+# Enhanced crawl logs endpoint
+@router.get("/crawl/logs")
+async def get_crawl_logs(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    crawler_type: Optional[str] = Query(None, description="Filter by crawler type: selenium, api, ai"),
+    status: Optional[str] = Query(None, description="Filter by status: running, completed, failed"),
+    limit: int = Query(100, description="Number of logs to return"),
+    hours: int = Query(24, description="Hours of history to include")
+):
+    """Get detailed crawl logs with filtering"""
+    try:
+        orchestrator = request.app.state.crawler
+        from datetime import timedelta
+        
+        # Build query
+        query = select(CrawlLog).where(
+            CrawlLog.started_at >= datetime.utcnow() - timedelta(hours=hours)
+        )
+        
+        if status:
+            query = query.where(CrawlLog.status == status)
+        
+        query = query.order_by(desc(CrawlLog.started_at)).limit(limit)
+        
+        result = await db.execute(query)
+        logs = result.scalars().all()
+        
+        # Get company info and classify crawler types
+        event_stream = []
+        for log in logs:
+            company_name = None
+            crawler_class = None
+            crawler_type_str = None
+            
+            if log.company_id:
+                company_result = await db.execute(
+                    select(Company).where(Company.id == log.company_id)
+                )
+                company = company_result.scalar_one_or_none()
+                if company:
+                    company_name = company.name
+                    crawler_type_str = company.crawler_type
+                    crawler_class = orchestrator.get_crawler_type_classification(company.crawler_type)
+            
+            # Filter by crawler class if specified
+            if crawler_type and crawler_class != crawler_type:
+                continue
+            
+            duration = None
+            if log.completed_at and log.started_at:
+                duration = (log.completed_at - log.started_at).total_seconds()
+            
+            event_stream.append({
+                "id": log.id,
+                "timestamp": log.started_at.isoformat() if log.started_at else None,
+                "company_id": log.company_id,
+                "company_name": company_name,
+                "crawler_type": crawler_type_str,
+                "crawler_class": crawler_class,
+                "status": log.status,
+                "completed_at": log.completed_at.isoformat() if log.completed_at else None,
+                "duration_seconds": duration,
+                "jobs_found": log.jobs_found,
+                "new_jobs": log.new_jobs,
+                "error_message": log.error_message,
+                "search_criteria_id": log.search_criteria_id
+            })
+        
+        return {
+            "events": event_stream,
+            "total": len(event_stream),
+            "filters": {
+                "crawler_type": crawler_type,
+                "status": status,
+                "hours": hours
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading crawl logs: {str(e)}")
 
 
 # OpenWebUI integration

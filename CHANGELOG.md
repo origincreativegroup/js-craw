@@ -1,5 +1,68 @@
 # Changelog
 
+## [Unreleased] Automation Command Center UX Overhaul
+
+### Major Features
+
+#### 1. Automation Command Center Dashboard
+- **Added**: Complete dashboard overhaul with real-time automation monitoring
+- **Features**:
+  - Real-time telemetry display (status, current run, next run ETA, queue length)
+  - Timeline/event stream visualization of automation events
+  - Per-automation health chips with color-coded status indicators
+  - Drill-down panels for Selenium-based, API-based, and AI-assisted crawlers
+  - Full automation control (pause/resume, adjust interval, cancel crawls)
+
+#### 2. Enhanced Backend API
+- **Added**: `/api/automation/scheduler` - Get scheduler metadata and next run time
+- **Added**: `PATCH /api/automation/scheduler` - Adjust crawl interval dynamically
+- **Added**: `POST /api/automation/pause` - Pause scheduled crawls
+- **Added**: `POST /api/automation/resume` - Resume scheduled crawls
+- **Added**: `/api/crawl/logs` - Detailed event stream with filtering
+- **Enhanced**: `/api/crawl/status` - Now includes:
+  - Queue length and current progress
+  - ETA calculation for running crawls
+  - Per-crawler-type health metrics (success rate, avg duration, error count)
+  - Crawler type classification (Selenium, API, AI)
+
+#### 3. Orchestrator Enhancements
+- **Added**: Progress tracking (current company X of Y, queue length)
+- **Added**: ETA calculation based on rolling average of company crawl durations
+- **Added**: Crawler type classification method
+- **Added**: Real-time progress state accessible via API
+
+#### 4. Frontend Improvements
+- **Replaced**: Dashboard tab with comprehensive Automation Command Center
+- **Added**: Real-time polling (status every 3s, scheduler every 10s)
+- **Added**: Interactive timeline showing last 24 hours of automation events
+- **Added**: Expandable drill-down panels for crawler type analysis
+- **Added**: Control panel with interval adjustment and automation controls
+- **Added**: Color-coded health indicators (green/yellow/red)
+
+### Technical Details
+
+#### New API Endpoints
+- `GET /api/automation/scheduler` - Scheduler metadata
+- `PATCH /api/automation/scheduler` - Update interval
+- `POST /api/automation/pause` - Pause scheduler
+- `POST /api/automation/resume` - Resume scheduler
+- `GET /api/crawl/logs` - Event stream with filters
+
+#### Modified Files
+- `app/crawler/orchestrator.py` - Added progress tracking and crawler classification
+- `app/api.py` - New automation endpoints and enhanced status endpoint
+- `main.py` - Exposed scheduler instance to API
+- `static/index.html` - Complete dashboard overhaul
+
+### UX Improvements
+- Clean, simple interface maintaining existing design system
+- Real-time updates without page refresh
+- Clear visual hierarchy with color-coded status indicators
+- Actionable controls for immediate automation management
+- Responsive design for mobile devices
+
+---
+
 ## [Planned] Enhanced Automated Job Search System
 
 ### Major Changes

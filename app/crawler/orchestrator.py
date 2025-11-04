@@ -31,6 +31,13 @@ class CrawlerOrchestrator:
         self._crawl_lock: asyncio.Lock = asyncio.Lock()
         # Cooperative cancellation flag checked between companies
         self._cancel_requested: bool = False
+        # Progress tracking
+        self._current_run_type: Optional[str] = None  # 'all_companies' or 'search'
+        self._current_company_index: int = 0
+        self._total_companies: int = 0
+        self._current_company_name: Optional[str] = None
+        self._start_time: Optional[datetime] = None
+        self._crawl_durations: List[float] = []  # Track durations for ETA calculation
     
     async def crawl_all_companies(self) -> List[Dict]:
         """
@@ -49,6 +56,10 @@ class CrawlerOrchestrator:
             all_results: List[Dict] = []
             all_new_job_ids: List[int] = []  # Collect IDs for batch AI processing
             self._cancel_requested = False
+            self._start_time = datetime.utcnow()
+            self._current_run_type = 'all_companies'
+            self._current_company_index = 0
+            self._current_company_name = None
 
             async with AsyncSessionLocal() as db:
                 # Get all active companies
@@ -56,12 +67,16 @@ class CrawlerOrchestrator:
                     select(Company).where(Company.is_active == True)
                 )
                 companies = result.scalars().all()
+                self._total_companies = len(companies)
 
                 logger.info(
                     f"Crawling all {len(companies)} active companies (saving jobs immediately, AI analysis in batch)"
                 )
 
-                for company in companies:
+                for idx, company in enumerate(companies):
+                    self._current_company_index = idx + 1
+                    self._current_company_name = company.name
+                    company_start = datetime.utcnow()
                     if self._cancel_requested:
                         logger.info("Crawl cancellation requested - stopping after current company")
                         break
@@ -98,6 +113,13 @@ class CrawlerOrchestrator:
                         company.last_crawled_at = datetime.utcnow()
                         company.jobs_found_total += len(new_jobs)
 
+                        # Track duration for ETA calculation
+                        company_duration = (datetime.utcnow() - company_start).total_seconds()
+                        self._crawl_durations.append(company_duration)
+                        # Keep only last 10 durations for rolling average
+                        if len(self._crawl_durations) > 10:
+                            self._crawl_durations = self._crawl_durations[-10:]
+
                         all_results.extend(
                             [
                                 {
@@ -119,12 +141,24 @@ class CrawlerOrchestrator:
                         logger.error(f"Error crawling company {company.name}: {e}", exc_info=True)
                         log.status = 'failed'
                         log.error_message = str(e)
+                        # Track failed duration
+                        company_duration = (datetime.utcnow() - company_start).total_seconds()
+                        self._crawl_durations.append(company_duration)
+                        if len(self._crawl_durations) > 10:
+                            self._crawl_durations = self._crawl_durations[-10:]
 
                     await db.commit()
 
             if all_new_job_ids and not self._cancel_requested:
                 logger.info(f"Starting batch AI analysis on {len(all_new_job_ids)} new jobs...")
                 asyncio.create_task(self._batch_analyze_jobs(all_new_job_ids))
+
+            # Reset progress tracking
+            self._current_run_type = None
+            self._current_company_index = 0
+            self._total_companies = 0
+            self._current_company_name = None
+            self._start_time = None
 
             logger.info(f"Crawl complete: {len(all_results)} new jobs saved (AI analysis running in background)")
 
@@ -266,13 +300,22 @@ class CrawlerOrchestrator:
             select(Company).where(Company.id.in_(company_ids), Company.is_active == True)
         )
         companies = result.scalars().all()
+        
+        # Track progress for search crawls
+        self._current_run_type = 'search'
+        self._current_company_index = 0
+        self._total_companies = len(companies)
+        self._start_time = datetime.utcnow()
 
         logger.info(f"Crawling {len(companies)} companies for search '{search.name}'")
 
         # Get user profile once for all filtering
         user_profile = await self.job_filter._get_user_profile_cached()
 
-        for company in companies:
+        for idx, company in enumerate(companies):
+            self._current_company_index = idx + 1
+            self._current_company_name = company.name
+            company_start = datetime.utcnow()
             if self._cancel_requested:
                 logger.info("Crawl cancellation requested - stopping search crawl")
                 break
@@ -323,13 +366,31 @@ class CrawlerOrchestrator:
                 } for job in new_jobs])
 
                 logger.info(f"✓ {company.name}: Found {len(jobs)} jobs, {len(filtered_jobs)} passed search criteria, {len(ai_filtered_jobs)} passed AI filter, {len(new_jobs)} new")
+                
+                # Track duration for ETA calculation
+                company_duration = (datetime.utcnow() - company_start).total_seconds()
+                self._crawl_durations.append(company_duration)
+                if len(self._crawl_durations) > 10:
+                    self._crawl_durations = self._crawl_durations[-10:]
 
             except Exception as e:
                 logger.error(f"Error crawling company {company.name}: {e}", exc_info=True)
                 log.status = 'failed'
                 log.error_message = str(e)
+                # Track failed duration
+                company_duration = (datetime.utcnow() - company_start).total_seconds()
+                self._crawl_durations.append(company_duration)
+                if len(self._crawl_durations) > 10:
+                    self._crawl_durations = self._crawl_durations[-10:]
 
             await db.commit()
+
+        # Reset progress tracking
+        self._current_run_type = None
+        self._current_company_index = 0
+        self._total_companies = 0
+        self._current_company_name = None
+        self._start_time = None
 
         return results
 
@@ -646,3 +707,47 @@ class CrawlerOrchestrator:
                 
         except Exception as e:
             logger.error(f"Error analyzing job {job_dict.get('id')}: {e}", exc_info=True)
+    
+    def get_crawler_type_classification(self, crawler_type: str) -> str:
+        """Classify crawler type as Selenium-based, API-based, or AI-assisted"""
+        selenium_based = {'indeed', 'linkedin'}
+        api_based = {'greenhouse', 'lever'}
+        ai_assisted = {'generic', 'workday'}
+        
+        if crawler_type in selenium_based:
+            return 'selenium'
+        elif crawler_type in api_based:
+            return 'api'
+        elif crawler_type in ai_assisted:
+            return 'ai'
+        else:
+            return 'unknown'
+    
+    def get_current_progress(self) -> Dict:
+        """Get current crawl progress information"""
+        if not self._current_run_type or self._total_companies == 0:
+            return {
+                'is_running': False,
+                'queue_length': 0,
+                'current_company': None,
+                'progress': {'current': 0, 'total': 0},
+                'eta_seconds': None
+            }
+        
+        # Calculate ETA based on average duration
+        avg_duration = sum(self._crawl_durations) / len(self._crawl_durations) if self._crawl_durations else 30
+        remaining_companies = self._total_companies - self._current_company_index
+        eta_seconds = int(avg_duration * remaining_companies)
+        
+        return {
+            'is_running': True,
+            'run_type': self._current_run_type,
+            'queue_length': remaining_companies,
+            'current_company': self._current_company_name,
+            'progress': {
+                'current': self._current_company_index,
+                'total': self._total_companies
+            },
+            'eta_seconds': eta_seconds,
+            'start_time': self._start_time.isoformat() if self._start_time else None
+        }
