@@ -30,7 +30,7 @@ services:
       retries: 5
 
   selenium-chrome:
-    image: selenium/standalone-chrome:latest
+    image: seleniarm/standalone-chromium:latest
     container_name: job-crawler-selenium
     shm_size: 2gb
     ports:
@@ -44,24 +44,8 @@ services:
       timeout: 5s
       retries: 5
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: job-crawler-ollama
-    volumes:
-      - ollama_data:/root/.ollama
-    ports:
-      - "11434:11434"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
   job-crawler:
-    image: jscraw.lan:5000/js-craw:latest
-    pull_policy: always
-    # For local development, uncomment the line below and comment out the image line above
-    # build: .
+    build: .
     container_name: job-crawler-app
     depends_on:
       postgres:
@@ -70,13 +54,11 @@ services:
         condition: service_healthy
       selenium-chrome:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/job_crawler
       - REDIS_URL=redis://redis:6379/0
       - SELENIUM_HOST=http://selenium-chrome:4444/wd/hub
-      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_HOST=http://192.168.50.248:11434
     env_file:
       - .env
     volumes:
@@ -92,5 +74,4 @@ services:
 
 volumes:
   postgres_data:
-  ollama_data:
 

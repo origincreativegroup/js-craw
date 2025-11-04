@@ -2,12 +2,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models import Job, SearchCriteria, User, FollowUp, CrawlLog
+from app.models import Job, SearchCriteria, User, FollowUp, CrawlLog, Company
 from app.utils.crypto import encrypt_password
 from app.crawler.orchestrator import CrawlerOrchestrator
 
@@ -24,7 +25,8 @@ class SearchCriteriaCreate(BaseModel):
     experience_level: Optional[str] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
-    platforms: List[str] = ["linkedin", "indeed"]
+    target_companies: Optional[List[int]] = None  # List of company IDs
+    platforms: List[str] = []  # Deprecated, kept for backward compatibility
     notify_on_new: bool = True
 
 
@@ -37,7 +39,8 @@ class SearchCriteriaUpdate(BaseModel):
     experience_level: Optional[str] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
-    platforms: Optional[List[str]] = None
+    target_companies: Optional[List[int]] = None
+    platforms: Optional[List[str]] = None  # Deprecated
     notify_on_new: Optional[bool] = None
     is_active: Optional[bool] = None
 
@@ -60,30 +63,50 @@ class FollowUpCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class CompanyCreate(BaseModel):
+    name: str
+    career_page_url: str
+    crawler_type: str = "generic"  # greenhouse, lever, workday, generic
+    crawler_config: Optional[dict] = None
+    is_active: bool = True
+
+
+class CompanyUpdate(BaseModel):
+    name: Optional[str] = None
+    career_page_url: Optional[str] = None
+    crawler_type: Optional[str] = None
+    crawler_config: Optional[dict] = None
+    is_active: Optional[bool] = None
+
+
 # Search Criteria endpoints
 @router.get("/searches")
 async def get_searches(
     db: AsyncSession = Depends(get_db)
 ):
     """Get all search criteria"""
-    result = await db.execute(select(SearchCriteria).order_by(desc(SearchCriteria.created_at)))
-    searches = result.scalars().all()
-    return [
-        {
-            "id": s.id,
-            "name": s.name,
-            "keywords": s.keywords,
-            "location": s.location,
-            "remote_only": s.remote_only,
-            "job_type": s.job_type,
-            "experience_level": s.experience_level,
-            "platforms": s.platforms,
-            "is_active": s.is_active,
-            "notify_on_new": s.notify_on_new,
-            "created_at": s.created_at.isoformat(),
-        }
-        for s in searches
-    ]
+    try:
+        result = await db.execute(select(SearchCriteria).order_by(desc(SearchCriteria.created_at)))
+        searches = result.scalars().all()
+        return [
+            {
+                "id": s.id,
+                "name": s.name,
+                "keywords": s.keywords,
+                "location": s.location,
+                "remote_only": s.remote_only,
+                "job_type": s.job_type,
+                "experience_level": s.experience_level,
+                "platforms": s.platforms,
+                "target_companies": s.target_companies,
+                "is_active": s.is_active,
+                "notify_on_new": s.notify_on_new,
+                "created_at": s.created_at.isoformat(),
+            }
+            for s in searches
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading searches: {str(e)}")
 
 
 @router.post("/searches")
@@ -92,26 +115,66 @@ async def create_search(
     db: AsyncSession = Depends(get_db)
 ):
     """Create new search criteria"""
-    # For simplicity, use user_id=1 (you'd want proper auth here)
-    new_search = SearchCriteria(
-        user_id=1,
-        name=search.name,
-        keywords=search.keywords,
-        location=search.location,
-        remote_only=search.remote_only,
-        job_type=search.job_type,
-        experience_level=search.experience_level,
-        salary_min=search.salary_min,
-        salary_max=search.salary_max,
-        platforms=search.platforms,
-        notify_on_new=search.notify_on_new
-    )
-    
-    db.add(new_search)
-    await db.commit()
-    await db.refresh(new_search)
-    
-    return {"id": new_search.id, "message": "Search criteria created"}
+    try:
+        # Validate target_companies if provided
+        if search.target_companies:
+            result = await db.execute(
+                select(Company).where(Company.id.in_(search.target_companies))
+            )
+            found_companies = result.scalars().all()
+            found_ids = {c.id for c in found_companies}
+            missing_ids = set(search.target_companies) - found_ids
+            if missing_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Companies not found: {list(missing_ids)}"
+                )
+        
+        # Ensure user_id=1 exists
+        result = await db.execute(select(User).where(User.id == 1))
+        user = result.scalar_one_or_none()
+        if not user:
+            # Create default user
+            default_user = User(
+                id=1,
+                platform="default",
+                email="default@example.com",
+                encrypted_password=""
+            )
+            db.add(default_user)
+            try:
+                await db.commit()
+            except IntegrityError:
+                # User might have been created concurrently
+                await db.rollback()
+        
+        # For simplicity, use user_id=1 (you'd want proper auth here)
+        new_search = SearchCriteria(
+            user_id=1,
+            name=search.name,
+            keywords=search.keywords,
+            location=search.location,
+            remote_only=search.remote_only,
+            job_type=search.job_type,
+            experience_level=search.experience_level,
+            salary_min=search.salary_min,
+            salary_max=search.salary_max,
+            target_companies=search.target_companies,
+            platforms=search.platforms or [],
+            notify_on_new=search.notify_on_new
+        )
+        
+        db.add(new_search)
+        await db.commit()
+        await db.refresh(new_search)
+        
+        return {"id": new_search.id, "message": "Search criteria created"}
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=f"Database constraint error: {str(e)}")
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.patch("/searches/{search_id}")
@@ -151,6 +214,149 @@ async def delete_search(
     await db.commit()
     
     return {"message": "Search deleted"}
+
+
+# Company endpoints
+@router.get("/companies")
+async def get_companies(
+    active_only: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all companies"""
+    try:
+        query = select(Company).order_by(Company.name)
+        if active_only:
+            query = query.where(Company.is_active == True)
+        
+        result = await db.execute(query)
+        companies = result.scalars().all()
+        
+        return [
+            {
+                "id": c.id,
+                "name": c.name,
+                "career_page_url": c.career_page_url,
+                "crawler_type": c.crawler_type,
+                "crawler_config": c.crawler_config,
+                "is_active": c.is_active,
+                "last_crawled_at": c.last_crawled_at.isoformat() if c.last_crawled_at else None,
+                "jobs_found_total": c.jobs_found_total,
+                "created_at": c.created_at.isoformat(),
+            }
+            for c in companies
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading companies: {str(e)}")
+
+
+@router.get("/companies/{company_id}")
+async def get_company(
+    company_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get company details"""
+    try:
+        result = await db.execute(select(Company).where(Company.id == company_id))
+        company = result.scalar_one_or_none()
+        
+        if not company:
+            raise HTTPException(status_code=404, detail="Company not found")
+        
+        return {
+            "id": company.id,
+            "name": company.name,
+            "career_page_url": company.career_page_url,
+            "crawler_type": company.crawler_type,
+            "crawler_config": company.crawler_config,
+            "is_active": company.is_active,
+            "last_crawled_at": company.last_crawled_at.isoformat() if company.last_crawled_at else None,
+            "jobs_found_total": company.jobs_found_total,
+            "created_at": company.created_at.isoformat(),
+            "updated_at": company.updated_at.isoformat(),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading company: {str(e)}")
+
+
+@router.post("/companies")
+async def create_company(
+    company: CompanyCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create new company"""
+    try:
+        new_company = Company(
+            name=company.name,
+            career_page_url=company.career_page_url,
+            crawler_type=company.crawler_type,
+            crawler_config=company.crawler_config,
+            is_active=company.is_active
+        )
+        
+        db.add(new_company)
+        await db.commit()
+        await db.refresh(new_company)
+        
+        return {"id": new_company.id, "message": "Company created"}
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=f"Company already exists or constraint error: {str(e)}")
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error creating company: {str(e)}")
+
+
+@router.patch("/companies/{company_id}")
+async def update_company(
+    company_id: int,
+    update: CompanyUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update company"""
+    try:
+        result = await db.execute(select(Company).where(Company.id == company_id))
+        company = result.scalar_one_or_none()
+        
+        if not company:
+            raise HTTPException(status_code=404, detail="Company not found")
+        
+        # Update fields
+        for field, value in update.dict(exclude_unset=True).items():
+            setattr(company, field, value)
+        
+        await db.commit()
+        return {"message": "Company updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating company: {str(e)}")
+
+
+@router.delete("/companies/{company_id}")
+async def delete_company(
+    company_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete company"""
+    try:
+        result = await db.execute(select(Company).where(Company.id == company_id))
+        company = result.scalar_one_or_none()
+        
+        if not company:
+            raise HTTPException(status_code=404, detail="Company not found")
+        
+        await db.delete(company)
+        await db.commit()
+        
+        return {"message": "Company deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting company: {str(e)}")
 
 
 # Job endpoints
@@ -308,6 +514,106 @@ async def get_followups(
     ]
 
 
+@router.get("/followups/recommendations")
+async def get_followup_recommendations(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get follow-up recommendations for the next 24 hours"""
+    try:
+        now = datetime.utcnow()
+        next_24h = now + timedelta(hours=24)
+        
+        recommendations = []
+        
+        # 1. Jobs with status "applied" that don't have a follow-up scheduled
+        applied_jobs_query = select(Job).where(
+            Job.status == "applied",
+            Job.is_new == False
+        )
+        applied_jobs = (await db.execute(applied_jobs_query)).scalars().all()
+        
+        # Get existing follow-ups for these jobs
+        job_ids = [j.id for j in applied_jobs]
+        jobs_with_followups = set()
+        if job_ids:
+            existing_followups_query = select(FollowUp).where(
+                FollowUp.job_id.in_(job_ids),
+                FollowUp.completed == False
+            )
+            existing_followups = (await db.execute(existing_followups_query)).scalars().all()
+            jobs_with_followups = {f.job_id for f in existing_followups}
+        
+        # Jobs needing follow-up
+        for job in applied_jobs:
+            if job.id not in jobs_with_followups:
+                recommendations.append({
+                    "type": "follow_up",
+                    "priority": "high",
+                    "job_id": job.id,
+                    "job_title": job.title,
+                    "company": job.company,
+                    "location": job.location,
+                    "applied_at": job.updated_at.isoformat() if job.updated_at else None,
+                    "suggested_action": "Schedule follow-up email or call",
+                    "ai_match_score": job.ai_match_score,
+                })
+        
+        # 2. Upcoming follow-ups (next 24 hours)
+        upcoming_followups_query = select(FollowUp).where(
+            FollowUp.completed == False,
+            FollowUp.follow_up_date >= now,
+            FollowUp.follow_up_date <= next_24h
+        ).order_by(FollowUp.follow_up_date)
+        upcoming_followups = (await db.execute(upcoming_followups_query)).scalars().all()
+        
+        for followup in upcoming_followups:
+            job_query = select(Job).where(Job.id == followup.job_id)
+            job = (await db.execute(job_query)).scalar_one_or_none()
+            
+            if job:
+                recommendations.append({
+                    "type": "upcoming_followup",
+                    "priority": "high" if (followup.follow_up_date - now).total_seconds() < 3600 else "medium",
+                    "followup_id": followup.id,
+                    "job_id": job.id,
+                    "job_title": job.title,
+                    "company": job.company,
+                    "location": job.location,
+                    "follow_up_date": followup.follow_up_date.isoformat(),
+                    "action_type": followup.action_type,
+                    "notes": followup.notes,
+                    "suggested_action": f"Follow up: {followup.action_type}",
+                })
+        
+        # 3. High-match jobs that haven't been applied to
+        high_match_jobs_query = select(Job).where(
+            Job.ai_match_score >= 75,
+            Job.status == "new"
+        ).order_by(desc(Job.ai_match_score)).limit(10)
+        high_match_jobs = (await db.execute(high_match_jobs_query)).scalars().all()
+        
+        for job in high_match_jobs:
+            recommendations.append({
+                "type": "apply_now",
+                "priority": "medium",
+                "job_id": job.id,
+                "job_title": job.title,
+                "company": job.company,
+                "location": job.location,
+                "ai_match_score": job.ai_match_score,
+                "discovered_at": job.discovered_at.isoformat(),
+                "suggested_action": "Apply now - high match score",
+            })
+        
+        # Sort by priority (high first, then by date)
+        priority_order = {"high": 0, "medium": 1, "low": 2}
+        recommendations.sort(key=lambda x: (priority_order.get(x.get("priority", "low"), 2), x.get("follow_up_date") or x.get("discovered_at") or ""))
+        
+        return recommendations
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading recommendations: {str(e)}")
+
+
 # Credentials endpoints
 @router.post("/credentials")
 async def save_credentials(
@@ -363,34 +669,38 @@ async def get_stats(
     db: AsyncSession = Depends(get_db)
 ):
     """Get dashboard statistics"""
-    # Total jobs
-    result = await db.execute(select(Job))
-    total_jobs = len(result.scalars().all())
-    
-    # New jobs (last 24 hours)
-    yesterday = datetime.utcnow() - timedelta(days=1)
-    result = await db.execute(
-        select(Job).where(Job.discovered_at >= yesterday)
-    )
-    new_jobs_24h = len(result.scalars().all())
-    
-    # Jobs by status
-    result = await db.execute(select(Job))
-    all_jobs = result.scalars().all()
-    by_status = {}
-    for job in all_jobs:
-        by_status[job.status] = by_status.get(job.status, 0) + 1
-    
-    # Active searches
-    result = await db.execute(
-        select(SearchCriteria).where(SearchCriteria.is_active == True)
-    )
-    active_searches = len(result.scalars().all())
-    
-    return {
-        "total_jobs": total_jobs,
-        "new_jobs_24h": new_jobs_24h,
-        "jobs_by_status": by_status,
-        "active_searches": active_searches
-    }
+    try:
+        # Total jobs
+        result = await db.execute(select(Job))
+        total_jobs = len(result.scalars().all())
+        
+        # New jobs (last 24 hours)
+        yesterday = datetime.utcnow() - timedelta(days=1)
+        result = await db.execute(
+            select(Job).where(Job.discovered_at >= yesterday)
+        )
+        new_jobs_24h = len(result.scalars().all())
+        
+        # Jobs by status
+        result = await db.execute(select(Job))
+        all_jobs = result.scalars().all()
+        by_status = {}
+        for job in all_jobs:
+            status_val = job.status or "new"
+            by_status[status_val] = by_status.get(status_val, 0) + 1
+        
+        # Active searches
+        result = await db.execute(
+            select(SearchCriteria).where(SearchCriteria.is_active == True)
+        )
+        active_searches = len(result.scalars().all())
+        
+        return {
+            "total_jobs": total_jobs,
+            "new_jobs_24h": new_jobs_24h,
+            "jobs_by_status": by_status,
+            "active_searches": active_searches
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading statistics: {str(e)}")
 

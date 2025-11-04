@@ -19,10 +19,29 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Company(Base):
+    """Company with career page"""
+    __tablename__ = "companies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, unique=True, index=True)
+    career_page_url = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True, index=True)
+    crawler_type = Column(String(50), nullable=False)  # greenhouse, lever, workday, generic
+    crawler_config = Column(JSON, nullable=True)  # Custom parsing rules
+    last_crawled_at = Column(DateTime, nullable=True)
+    jobs_found_total = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    jobs = relationship("Job", back_populates="company")
+
+
 class SearchCriteria(Base):
     """Job search criteria"""
     __tablename__ = "search_criteria"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
@@ -33,12 +52,13 @@ class SearchCriteria(Base):
     experience_level = Column(String(50), nullable=True)  # entry, mid, senior, etc.
     salary_min = Column(Integer, nullable=True)
     salary_max = Column(Integer, nullable=True)
-    platforms = Column(JSON, default=["linkedin", "indeed"])  # List of platforms
+    platforms = Column(JSON, default=["linkedin", "indeed"])  # List of platforms (legacy)
+    target_companies = Column(JSON, nullable=True)  # List of company IDs to monitor
     is_active = Column(Boolean, default=True, index=True)
     notify_on_new = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     jobs = relationship("Job", back_populates="search_criteria")
     crawl_logs = relationship("CrawlLog", back_populates="search_criteria")
@@ -47,36 +67,39 @@ class SearchCriteria(Base):
 class Job(Base):
     """Job posting"""
     __tablename__ = "jobs"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     search_criteria_id = Column(Integer, ForeignKey("search_criteria.id"), nullable=False, index=True)
-    platform = Column(String(50), nullable=False, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # New: for company-based crawls
+    platform = Column(String(50), nullable=True, index=True)  # Legacy: linkedin/indeed
     external_id = Column(String(255), nullable=False, index=True)  # Platform-specific ID
     title = Column(String(500), nullable=False)
-    company = Column(String(255), nullable=False)
+    company = Column(String(255), nullable=False)  # Company name string
     location = Column(String(255), nullable=True)
     job_type = Column(String(50), nullable=True)
     url = Column(Text, nullable=False)
+    source_url = Column(Text, nullable=True)  # New: Direct link to career page posting
     description = Column(Text, nullable=True)
     posted_date = Column(DateTime, nullable=True)
-    
+
     # AI analysis
     ai_match_score = Column(Float, nullable=True)
     ai_summary = Column(Text, nullable=True)
     ai_pros = Column(JSON, nullable=True)  # List of pros
     ai_cons = Column(JSON, nullable=True)  # List of cons
     ai_keywords_matched = Column(JSON, nullable=True)  # List of matched keywords
-    
+
     # User tracking
     status = Column(String(50), default="new", index=True)  # new, viewed, applied, rejected, saved
     notes = Column(Text, nullable=True)
     is_new = Column(Boolean, default=True, index=True)
-    
+
     discovered_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     search_criteria = relationship("SearchCriteria", back_populates="jobs")
+    company = relationship("Company", back_populates="jobs")
     follow_ups = relationship("FollowUp", back_populates="job")
 
 
