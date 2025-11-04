@@ -156,6 +156,89 @@ async def run_migration():
             print("  ✓ search_criteria_id is now nullable in crawl_logs")
         else:
             print("  ⊘ search_criteria_id is already nullable in crawl_logs")
+        
+        # Check if crawl_fallbacks table exists
+        result = await conn.execute(
+            text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'crawl_fallbacks'
+                )
+            """)
+        )
+        crawl_fallbacks_exists = result.scalar()
+        
+        # Create crawl_fallbacks table if it doesn't exist
+        if not crawl_fallbacks_exists:
+            print("  Creating crawl_fallbacks table...")
+            await conn.execute(text("""
+                CREATE TABLE crawl_fallbacks (
+                    id SERIAL PRIMARY KEY,
+                    company_id INTEGER NOT NULL REFERENCES companies(id),
+                    method_used VARCHAR(50) NOT NULL,
+                    success_count INTEGER DEFAULT 0,
+                    last_success_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            await conn.execute(text("CREATE INDEX ix_crawl_fallbacks_company_id ON crawl_fallbacks(company_id)"))
+            print("  ✓ crawl_fallbacks table created")
+        else:
+            print("  ⊘ crawl_fallbacks table already exists")
+        
+        # Check which new Company columns exist
+        result = await conn.execute(
+            text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'companies' 
+                AND column_name IN (
+                    'consecutive_empty_crawls', 
+                    'viability_score', 
+                    'viability_last_checked',
+                    'discovery_source',
+                    'last_successful_crawl',
+                    'priority_score'
+                )
+            """)
+        )
+        existing_company_columns = [row[0] for row in result.fetchall()]
+        
+        # Add new columns to companies table if they don't exist
+        if 'consecutive_empty_crawls' not in existing_company_columns:
+            print("  Adding consecutive_empty_crawls column to companies table...")
+            await conn.execute(text("ALTER TABLE companies ADD COLUMN consecutive_empty_crawls INTEGER DEFAULT 0"))
+            await conn.execute(text("CREATE INDEX ix_companies_consecutive_empty_crawls ON companies(consecutive_empty_crawls)"))
+            print("  ✓ consecutive_empty_crawls column added")
+        
+        if 'viability_score' not in existing_company_columns:
+            print("  Adding viability_score column to companies table...")
+            await conn.execute(text("ALTER TABLE companies ADD COLUMN viability_score REAL"))
+            await conn.execute(text("CREATE INDEX ix_companies_viability_score ON companies(viability_score)"))
+            print("  ✓ viability_score column added")
+        
+        if 'viability_last_checked' not in existing_company_columns:
+            print("  Adding viability_last_checked column to companies table...")
+            await conn.execute(text("ALTER TABLE companies ADD COLUMN viability_last_checked TIMESTAMP"))
+            print("  ✓ viability_last_checked column added")
+        
+        if 'discovery_source' not in existing_company_columns:
+            print("  Adding discovery_source column to companies table...")
+            await conn.execute(text("ALTER TABLE companies ADD COLUMN discovery_source VARCHAR(50)"))
+            print("  ✓ discovery_source column added")
+        
+        if 'last_successful_crawl' not in existing_company_columns:
+            print("  Adding last_successful_crawl column to companies table...")
+            await conn.execute(text("ALTER TABLE companies ADD COLUMN last_successful_crawl TIMESTAMP"))
+            await conn.execute(text("CREATE INDEX ix_companies_last_successful_crawl ON companies(last_successful_crawl)"))
+            print("  ✓ last_successful_crawl column added")
+        
+        if 'priority_score' not in existing_company_columns:
+            print("  Adding priority_score column to companies table...")
+            await conn.execute(text("ALTER TABLE companies ADD COLUMN priority_score REAL DEFAULT 0.0"))
+            await conn.execute(text("CREATE INDEX ix_companies_priority_score ON companies(priority_score)"))
+            print("  ✓ priority_score column added")
     
     print("\n✅ Database migration complete!")
 

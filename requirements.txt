@@ -25,3 +25,4 @@ ollama==0.1.6
 openai==1.3.7
 lxml==4.9.3
 pandas==2.1.3
+python-telegram-bot==20.7

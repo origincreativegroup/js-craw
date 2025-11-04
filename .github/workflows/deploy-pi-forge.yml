@@ -8,12 +8,15 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
+    continue-on-error: false
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        id: checkout
 
       - name: Sync code to deployment directory
+        id: sync
         run: |
           echo "📂 Syncing code to /home/admin/js-craw..."
           rsync -av --delete \
@@ -24,13 +27,14 @@ jobs:
           echo "✅ Code synced (keeping existing .env)"
 
       - name: Create backup of current deployment
+        id: backup
         run: |
           timestamp=$(date +%Y%m%d_%H%M%S)
           echo "📦 Creating backup: backup_$timestamp"
 
           # Stop containers before backup
           cd /home/admin/js-craw
-          docker compose down
+          docker compose down || true
 
           # Backup directory structure
           mkdir -p /home/admin/deployments/js-craw
@@ -39,19 +43,56 @@ jobs:
             echo "✅ Previous deployment backed up"
           fi
 
+      - name: Run pre-deployment tests
+        id: pre_tests
+        working-directory: /home/admin/js-craw
+        continue-on-error: true
+        run: |
+          echo "🧪 Running pre-deployment tests..."
+          
+          # Install test dependencies if needed
+          python3 -m pip install -q pytest requests || true
+          
+          # Run test runner
+          python3 scripts/deployment/debug_test_runner.py --json > /tmp/pre_deploy_test_results.json 2>&1 || true
+          
+          # Check if tests passed
+          if python3 -c "import json; data=json.load(open('/tmp/pre_deploy_test_results.json')); exit(0 if data.get('passed', False) else 1)" 2>/dev/null; then
+            echo "✅ Pre-deployment tests passed"
+            echo "pre_tests_passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Pre-deployment tests failed (continuing with deployment)"
+            echo "pre_tests_passed=false" >> $GITHUB_OUTPUT
+            cat /tmp/pre_deploy_test_results.json || true
+          fi
+
       - name: Rebuild Docker images
+        id: build
         working-directory: /home/admin/js-craw
         run: |
           echo "🔨 Building Docker images..."
-          docker compose build --no-cache
-          echo "✅ Images rebuilt successfully"
+          if docker compose build --no-cache; then
+            echo "✅ Images rebuilt successfully"
+            echo "build_success=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Docker build failed"
+            echo "build_success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
 
       - name: Deploy updated containers
+        id: deploy
         working-directory: /home/admin/js-craw
         run: |
           echo "🚀 Starting containers..."
-          docker compose up -d
-          echo "✅ Containers started"
+          if docker compose up -d; then
+            echo "✅ Containers started"
+            echo "deploy_success=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Failed to start containers"
+            echo "deploy_success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
 
           # Wait for health checks
           echo "⏳ Waiting for services to be healthy..."
@@ -60,53 +101,145 @@ jobs:
           # Check container status
           docker compose ps
 
-      - name: Verify deployment
+      - name: Run post-deployment tests
+        id: post_tests
         working-directory: /home/admin/js-craw
+        continue-on-error: true
         run: |
-          echo "🔍 Verifying deployment..."
-
+          echo "🧪 Running post-deployment tests..."
+          
           # Wait a bit more for app to fully start
           sleep 10
+
+          # Run comprehensive test suite
+          if python3 scripts/deployment/debug_test_runner.py --json > /tmp/post_deploy_test_results.json 2>&1; then
+            # Check if tests passed
+            if python3 -c "import json; data=json.load(open('/tmp/post_deploy_test_results.json')); exit(0 if data.get('passed', False) else 1)" 2>/dev/null; then
+              echo "✅ Post-deployment tests passed"
+              echo "post_tests_passed=true" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Post-deployment tests failed"
+              echo "post_tests_passed=false" >> $GITHUB_OUTPUT
+              cat /tmp/post_deploy_test_results.json || true
+            fi
+          else
+            echo "⚠️ Test runner failed to execute"
+            echo "post_tests_passed=false" >> $GITHUB_OUTPUT
+            cat /tmp/post_deploy_test_results.json || true
+          fi
+
+      - name: Verify deployment
+        id: verify
+        working-directory: /home/admin/js-craw
+        continue-on-error: true
+        run: |
+          echo "🔍 Verifying deployment..."
 
           # Check health endpoint
           if curl -f http://localhost:8001/health; then
             echo "✅ Health check passed"
+            echo "health_check_passed=true" >> $GITHUB_OUTPUT
           else
-            echo "⚠️ Health check failed, but containers are running"
+            echo "⚠️ Health check failed"
+            echo "health_check_passed=false" >> $GITHUB_OUTPUT
           fi
 
           # Show running containers
           docker ps --filter "name=job-crawler"
 
+      - name: Handle deployment failure
+        if: failure()
+        working-directory: /home/admin/js-craw
+        run: |
+          echo "🚨 Handling deployment failure..."
+          
+          # Determine error type
+          ERROR_TYPE="deployment_failure"
+          ERROR_MSG="Deployment failed during workflow execution"
+          
+          if [ "${{ steps.build.outputs.build_success }}" != "true" ]; then
+            ERROR_TYPE="build_failure"
+            ERROR_MSG="Docker image build failed"
+          elif [ "${{ steps.deploy.outputs.deploy_success }}" != "true" ]; then
+            ERROR_TYPE="deployment_failure"
+            ERROR_MSG="Failed to start containers"
+          elif [ "${{ steps.post_tests.outputs.post_tests_passed }}" == "false" ]; then
+            ERROR_TYPE="test_failure"
+            ERROR_MSG="Post-deployment tests failed"
+          fi
+          
+          # Collect test results if available
+          TEST_RESULTS_FILE=""
+          if [ -f /tmp/post_deploy_test_results.json ]; then
+            TEST_RESULTS_FILE="/tmp/post_deploy_test_results.json"
+          elif [ -f /tmp/pre_deploy_test_results.json ]; then
+            TEST_RESULTS_FILE="/tmp/pre_deploy_test_results.json"
+          fi
+          
+          # Get stack trace from last failed step
+          STACK_TRACE=""
+          if [ -f "$GITHUB_STEP_SUMMARY" ]; then
+            STACK_TRACE=$(tail -50 "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "")
+          fi
+          
+          # Run failure handler
+          python3 scripts/deployment/failure_handler.py \
+            "$ERROR_TYPE" \
+            "$ERROR_MSG" \
+            --test-results "$TEST_RESULTS_FILE" \
+            --stack-trace "$STACK_TRACE" \
+            --context "{\"workflow_run\":\"$GITHUB_RUN_ID\",\"commit\":\"${{ github.sha }}\"}" || true
+          
+          echo "✅ Failure handling completed"
+
       - name: Create deployment marker
+        if: success()
         run: |
           mkdir -p /home/admin/deployments/js-craw/current
           cd /home/admin/js-craw
-          git log -1 --format="%H%n%an%n%ae%n%ai%n%s" > /home/admin/deployments/js-craw/current/DEPLOYMENT_INFO.txt
+          git log -1 --format="%H%n%an%n%ae%n%ai%n%s" > /home/admin/deployments/js-craw/current/DEPLOYMENT_INFO.txt || true
           echo "✅ Deployment marker created"
 
       - name: Cleanup old backups
+        if: always()
         run: |
           echo "🧹 Cleaning up old backups (keeping last 5)..."
-          cd /home/admin/deployments/js-craw
-          ls -t backup_* 2>/dev/null | tail -n +6 | xargs -r rm -rf
+          cd /home/admin/deployments/js-craw || exit 0
+          ls -t backup_* 2>/dev/null | tail -n +6 | xargs -r rm -rf || true
           echo "✅ Cleanup complete"
 
       - name: Deployment summary
+        if: always()
         run: |
-          echo "## 🎉 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "## 🎉 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## 🚨 Deployment Failed!" >> $GITHUB_STEP_SUMMARY
+          fi
+          
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Commit Information" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          cd /home/admin/js-craw && git log -1 --format="%h - %s (%an, %ar)" >> $GITHUB_STEP_SUMMARY
+          cd /home/admin/js-craw && git log -1 --format="%h - %s (%an, %ar)" >> $GITHUB_STEP_SUMMARY || echo "Failed to get commit info" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Service Status" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          docker ps --filter "name=job-crawler" --format "table {{.Names}}\t{{.Status}}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Access Points" >> $GITHUB_STEP_SUMMARY
-          echo "- Dashboard: http://192.168.50.157:8001/static/index.html" >> $GITHUB_STEP_SUMMARY
-          echo "- API Docs: http://192.168.50.157:8001/docs" >> $GITHUB_STEP_SUMMARY
-          echo "- Health: http://192.168.50.157:8001/health" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "### Service Status" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            docker ps --filter "name=job-crawler" --format "table {{.Names}}\t{{.Status}}" >> $GITHUB_STEP_SUMMARY || echo "Failed to get container status" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Access Points" >> $GITHUB_STEP_SUMMARY
+            echo "- Dashboard: http://192.168.50.157:8001/static/index.html" >> $GITHUB_STEP_SUMMARY
+            echo "- API Docs: http://192.168.50.157:8001/docs" >> $GITHUB_STEP_SUMMARY
+            echo "- Health: http://192.168.50.157:8001/health" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Failure Details" >> $GITHUB_STEP_SUMMARY
+            echo "Check the workflow logs and deployment-failures directory for detailed error information." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+            if [ -f /tmp/post_deploy_test_results.json ]; then
+              echo "Post-deployment test results are available in the logs." >> $GITHUB_STEP_SUMMARY
+            fi
+          fi

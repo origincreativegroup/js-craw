@@ -415,6 +415,55 @@
             color: var(--danger);
         }
         
+        /* Settings Sections */
+        .settings-section {
+            padding: 16px;
+            display: block;
+        }
+        
+        .settings-section:not(.active) {
+            display: none;
+        }
+        
+        .notification-method-settings {
+            margin-top: 16px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+        
+        .status-indicator.running {
+            background: #10b981;
+        }
+        
+        .status-indicator.idle {
+            background: #6b7280;
+        }
+        
+        .form-group small {
+            display: block;
+            margin-top: 4px;
+            font-size: 12px;
+        }
+        
+        .form-group small a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        
+        .form-group small a:hover {
+            text-decoration: underline;
+        }
+        
         .requirements-list.nice-to-have li:before {
             content: "○";
             color: var(--text-muted);
@@ -1222,6 +1271,9 @@
                 </div>
             </div>
             
+            <!-- Stats Grid -->
+            <div id="stats" class="stats-grid"></div>
+            
             <!-- Automation Health Chips -->
             <div class="health-chips-grid" id="health-chips"></div>
             
@@ -1350,6 +1402,16 @@
                     <h2 class="card-title">All Jobs</h2>
                     <div style="display: flex; gap: 8px; align-items: center;">
                         <input type="text" id="job-search" placeholder="🔍 Search jobs..." style="width: 250px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;" onkeyup="searchJobs()">
+                        <select id="job-sort" onchange="sortJobs()" style="padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: white; cursor: pointer;">
+                            <option value="date-desc">Newest First</option>
+                            <option value="date-asc">Oldest First</option>
+                            <option value="score-desc">Highest Match</option>
+                            <option value="score-asc">Lowest Match</option>
+                            <option value="company-asc">Company (A-Z)</option>
+                            <option value="company-desc">Company (Z-A)</option>
+                            <option value="title-asc">Title (A-Z)</option>
+                            <option value="title-desc">Title (Z-A)</option>
+                        </select>
                         <button class="btn btn-secondary btn-sm" onclick="loadJobs()">Refresh</button>
                     </div>
                 </div>
@@ -1377,9 +1439,251 @@
         
         <!-- Settings Tab -->
         <div id="settings" class="tab-content">
-            <div class="card">
-                <h2 class="card-title">Settings</h2>
-                <p style="color: var(--text-muted); margin-top: 8px;">Crawl settings and preferences</p>
+            <div id="settings-container">
+                <div class="card">
+                    <h2 class="card-title">Settings</h2>
+                    <p style="color: var(--text-muted); margin-top: 8px;">Configure system settings and preferences</p>
+                </div>
+                
+                <!-- Notifications Section -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header" style="cursor: pointer;" onclick="toggleSettingsSection('notifications')">
+                        <h3 class="card-title" style="margin: 0;">🔔 Notifications</h3>
+                        <span id="notifications-toggle">▼</span>
+                    </div>
+                    <div id="notifications-section" class="settings-section active">
+                        <div class="form-group">
+                            <label>Notification Method:</label>
+                            <select id="notification-method" onchange="updateNotificationMethodUI()">
+                                <option value="ntfy">ntfy.sh</option>
+                                <option value="pushover">Pushover</option>
+                                <option value="telegram">Telegram</option>
+                            </select>
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">Choose how to receive job notifications</small>
+                        </div>
+                        
+                        <!-- ntfy.sh Settings -->
+                        <div id="ntfy-settings" class="notification-method-settings">
+                            <div class="form-group">
+                                <label>ntfy Server:</label>
+                                <input type="text" id="ntfy-server" placeholder="https://ntfy.sh">
+                                <small style="color: var(--text-muted); display: block; margin-top: 4px;">ntfy.sh server URL</small>
+                            </div>
+                            <div class="form-group">
+                                <label>Topic:</label>
+                                <input type="text" id="ntfy-topic" placeholder="job-alerts-xyz123">
+                                <small style="color: var(--text-muted); display: block; margin-top: 4px;">Your ntfy topic name</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Pushover Settings -->
+                        <div id="pushover-settings" class="notification-method-settings" style="display: none;">
+                            <div class="form-group">
+                                <label>User Key:</label>
+                                <input type="text" id="pushover-user-key" placeholder="Your Pushover user key">
+                                <small style="color: var(--text-muted); display: block; margin-top: 4px;">Get from <a href="https://pushover.net" target="_blank">pushover.net</a></small>
+                            </div>
+                            <div class="form-group">
+                                <label>App Token:</label>
+                                <input type="text" id="pushover-app-token" placeholder="Your Pushover app token">
+                                <small style="color: var(--text-muted); display: block; margin-top: 4px;">Create an application in Pushover dashboard</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Telegram Settings -->
+                        <div id="telegram-settings" class="notification-method-settings" style="display: none;">
+                            <div class="form-group">
+                                <label>Bot Token:</label>
+                                <input type="password" id="telegram-bot-token" placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz">
+                                <small style="color: var(--text-muted); display: block; margin-top: 4px;">
+                                    Get from <a href="https://t.me/BotFather" target="_blank">@BotFather</a> on Telegram. Send /newbot to create a bot.
+                                </small>
+                                <button type="button" class="btn btn-sm btn-secondary" onclick="togglePasswordVisibility('telegram-bot-token')" style="margin-top: 4px;">Show/Hide</button>
+                            </div>
+                            <div class="form-group">
+                                <label>Chat ID:</label>
+                                <input type="text" id="telegram-chat-id" placeholder="123456789">
+                                <small style="color: var(--text-muted); display: block; margin-top: 4px;">
+                                    Get from <a href="https://t.me/userinfobot" target="_blank">@userinfobot</a>. Send /start to get your chat ID.
+                                </small>
+                            </div>
+                            <div class="form-group">
+                                <label>Bot Mode:</label>
+                                <select id="telegram-bot-mode" onchange="updateTelegramModeUI()">
+                                    <option value="polling">Polling</option>
+                                    <option value="webhook">Webhook</option>
+                                </select>
+                                <small style="color: var(--text-muted); display: block; margin-top: 4px;">Polling is recommended for most setups</small>
+                            </div>
+                            <div id="telegram-webhook-settings" class="form-group" style="display: none;">
+                                <label>Webhook URL:</label>
+                                <input type="url" id="telegram-webhook-url" placeholder="https://yourdomain.com/api/telegram/webhook">
+                                <small style="color: var(--text-muted); display: block; margin-top: 4px;">Full URL where Telegram should send updates</small>
+                            </div>
+                            <div class="form-group">
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <span id="telegram-status" class="status-indicator" style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #ccc;"></span>
+                                    <span id="telegram-status-text" style="font-size: 14px; color: var(--text-muted);">Status: Unknown</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <button type="button" class="btn btn-primary" onclick="testTelegramBot()">Test Telegram Connection</button>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group" style="margin-top: 16px;">
+                            <button type="button" class="btn btn-primary" onclick="saveNotificationSettings()">Save Notification Settings</button>
+                            <button type="button" class="btn btn-secondary" onclick="testNotification(event)" style="margin-left: 8px;">Send Test Notification</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Company Lifecycle Section -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header" style="cursor: pointer;" onclick="toggleSettingsSection('company-lifecycle')">
+                        <h3 class="card-title" style="margin: 0;">🏢 Company Lifecycle Management</h3>
+                        <span id="company-lifecycle-toggle">▼</span>
+                    </div>
+                    <div id="company-lifecycle-section" class="settings-section active">
+                        <div class="form-group">
+                            <label>Target Company Count:</label>
+                            <input type="number" id="company-target-count" min="1" placeholder="1500">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">Target number of companies to maintain in the database</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Discovery Batch Size:</label>
+                            <input type="number" id="company-discovery-batch-size" min="1" placeholder="50">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">Number of companies to discover per batch</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Consecutive Empty Threshold:</label>
+                            <input type="number" id="consecutive-empty-threshold" min="1" placeholder="3">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">Remove companies after N consecutive empty crawls</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Viability Score Threshold:</label>
+                            <input type="number" id="viability-score-threshold" min="0" max="100" step="0.1" placeholder="30.0">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">Minimum viability score (0-100) to keep company</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Company Refresh Schedule:</label>
+                            <select id="company-refresh-schedule">
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">How often to refresh the company list</small>
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <input type="checkbox" id="web-search-enabled">
+                            <label for="web-search-enabled">Enable AI Web Search for Company Discovery</label>
+                        </div>
+                        <div class="form-group" style="margin-top: 16px;">
+                            <button type="button" class="btn btn-primary" onclick="saveCompanyLifecycleSettings()">Save Company Lifecycle Settings</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Task Workspace Section -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header" style="cursor: pointer;" onclick="toggleSettingsSection('task-workspace')">
+                        <h3 class="card-title" style="margin: 0;">📋 Task Workspace</h3>
+                        <span id="task-workspace-toggle">▼</span>
+                    </div>
+                    <div id="task-workspace-section" class="settings-section active">
+                        <div class="form-group checkbox-group">
+                            <input type="checkbox" id="auto-generate-tasks">
+                            <label for="auto-generate-tasks">Auto-generate tasks from AI insights</label>
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">Automatically create tasks based on AI analysis of jobs</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Task Match Score Threshold:</label>
+                            <input type="number" id="task-match-score-threshold" min="0" max="100" step="0.1" placeholder="50.0">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">Minimum match score (0-100) for auto-generating tasks</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Task Reminder Check Interval (minutes):</label>
+                            <input type="number" id="task-reminder-check-interval" min="1" placeholder="60">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">How often to check for due tasks</small>
+                        </div>
+                        <div class="form-group" style="margin-top: 16px;">
+                            <button type="button" class="btn btn-primary" onclick="saveTaskWorkspaceSettings()">Save Task Workspace Settings</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Crawl Scheduling Section -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header" style="cursor: pointer;" onclick="toggleSettingsSection('crawl-scheduling')">
+                        <h3 class="card-title" style="margin: 0;">⏰ Crawl Scheduling</h3>
+                        <span id="crawl-scheduling-toggle">▼</span>
+                    </div>
+                    <div id="crawl-scheduling-section" class="settings-section active">
+                        <div class="form-group">
+                            <label>Crawl Interval (minutes):</label>
+                            <input type="number" id="crawl-interval-minutes" min="1" placeholder="30">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">How often to crawl all companies</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Daily Top Jobs Count:</label>
+                            <input type="number" id="daily-top-jobs-count" min="1" placeholder="5">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">Number of top jobs to highlight daily</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Daily Generation Time:</label>
+                            <input type="time" id="daily-generation-time" placeholder="15:00">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">Time of day to generate daily top jobs (HH:MM format)</small>
+                        </div>
+                        <div class="form-group" style="margin-top: 16px;">
+                            <button type="button" class="btn btn-primary" onclick="saveCrawlSchedulingSettings()">Save Crawl Scheduling Settings</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- AI/Ollama Section -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header" style="cursor: pointer;" onclick="toggleSettingsSection('ai-settings')">
+                        <h3 class="card-title" style="margin: 0;">🤖 AI/Ollama Settings</h3>
+                        <span id="ai-settings-toggle">▼</span>
+                    </div>
+                    <div id="ai-settings-section" class="settings-section active">
+                        <div class="form-group">
+                            <label>Ollama Host:</label>
+                            <input type="url" id="ollama-host" placeholder="http://ollama:11434">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">Ollama server URL</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Ollama Model:</label>
+                            <input type="text" id="ollama-model" placeholder="llama2">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">AI model name (e.g., llama2, mistral, codellama)</small>
+                        </div>
+                        <div class="form-group" style="margin-top: 16px;">
+                            <button type="button" class="btn btn-primary" onclick="saveAISettings()">Save AI Settings</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- OpenWebUI Section -->
+                <div class="card" style="margin-top: 16px;">
+                    <div class="card-header" style="cursor: pointer;" onclick="toggleSettingsSection('openwebui')">
+                        <h3 class="card-title" style="margin: 0;">🌐 OpenWebUI Integration</h3>
+                        <span id="openwebui-toggle">▼</span>
+                    </div>
+                    <div id="openwebui-section" class="settings-section active">
+                        <div class="form-group checkbox-group">
+                            <input type="checkbox" id="openwebui-enabled">
+                            <label for="openwebui-enabled">Enable OpenWebUI Integration</label>
+                        </div>
+                        <div class="form-group">
+                            <label>OpenWebUI URL:</label>
+                            <input type="url" id="openwebui-url" placeholder="http://localhost:3000">
+                            <small style="color: var(--text-muted); display: block; margin-top: 4px;">URL of your OpenWebUI instance</small>
+                        </div>
+                        <div class="form-group" style="margin-top: 16px;">
+                            <button type="button" class="btn btn-primary" onclick="saveOpenWebUISettings()">Save OpenWebUI Settings</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1484,6 +1788,19 @@
         </div>
     </div>
     
+    <!-- Job Detail Modal -->
+    <div id="job-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 class="modal-title" id="job-modal-title">Job Details</h2>
+                <button class="close" onclick="closeJobModal()">&times;</button>
+            </div>
+            <div id="job-modal-content" style="max-height: 80vh; overflow-y: auto;">
+                <div class="loading">Loading job details...</div>
+            </div>
+        </div>
+    </div>
+    
     <!-- Toast Notification -->
     <div id="toast" class="toast"></div>
     
@@ -1523,29 +1840,44 @@
             const statusEl = document.getElementById('crawler-status');
             const statusText = document.getElementById('status-text');
             const statusDetails = document.getElementById('status-details');
+            
+            // Gracefully handle missing elements
+            if (!statusEl || !statusText || !statusDetails) {
+                return; // Status elements not present, skip update
+            }
+            
             const indicator = statusEl.querySelector('.status-indicator');
             const crawlBtn = document.getElementById('crawl-btn');
             
             if (status.is_running) {
                 statusEl.className = 'crawler-status running';
-                indicator.className = 'status-indicator running';
+                if (indicator) indicator.className = 'status-indicator running';
                 statusText.textContent = `Crawler Running (${status.running_count} active)`;
                 statusDetails.textContent = `Scanning ${status.active_companies} companies...`;
-                crawlBtn.disabled = true;
-                crawlBtn.textContent = 'Crawling...';
+                if (crawlBtn) {
+                    crawlBtn.disabled = true;
+                    crawlBtn.textContent = 'Crawling...';
+                }
             } else {
                 statusEl.className = 'crawler-status idle';
-                indicator.className = 'status-indicator idle';
+                if (indicator) indicator.className = 'status-indicator idle';
                 statusText.textContent = 'Crawler Idle';
                 statusDetails.textContent = `Ready • ${status.active_companies} active companies`;
-                crawlBtn.disabled = false;
-                crawlBtn.textContent = 'Run Search Crawl';
+                if (crawlBtn) {
+                    crawlBtn.disabled = false;
+                    crawlBtn.textContent = 'Run Search Crawl';
+                }
             }
         }
         
         // Update crawl activity display
         function updateCrawlActivity(logs) {
             const container = document.getElementById('crawl-activity');
+            
+            // Gracefully handle missing element
+            if (!container) {
+                return; // Crawl activity container not present, skip update
+            }
             
             if (logs.length === 0) {
                 container.innerHTML = '<div class="empty-state" style="padding: 20px;"><p>No crawl activity yet</p></div>';
@@ -1658,11 +1990,14 @@
             if (tabName === 'dashboard') {
                 loadDashboard();
                 loadCrawlStatus();
+                loadAutomationCommandCenter();
+                startAutomationPolling();
             }
             if (tabName === 'companies') loadCompanies();
             if (tabName === 'jobs') loadJobs();
             if (tabName === 'searches') loadSearches();
             if (tabName === 'followups') loadFollowUpRecommendations();
+            if (tabName === 'settings') loadSettings();
         }
         
         // Dashboard
@@ -1723,6 +2058,11 @@
             const progressEl = document.getElementById('batch-progress');
             const progressFill = document.getElementById('progress-fill');
             const progressText = document.getElementById('progress-text');
+            
+            // Gracefully handle missing elements
+            if (!progressEl || !progressFill || !progressText) {
+                return; // Progress elements not present, skip update
+            }
             
             if (pendingCount > 0 && totalJobs > 0) {
                 const completed = totalJobs - pendingCount;
@@ -1998,7 +2338,7 @@
         
         // Jobs
         let allJobsData = [];
-        let expandedJobId = null;
+        let currentJobSort = 'date-desc';
         
         async function loadJobs() {
             const url = currentJobFilter ? `${API_BASE}/jobs?status=${currentJobFilter}` : `${API_BASE}/jobs`;
@@ -2007,7 +2347,8 @@
                 if (!res.ok) return;
                 const jobs = await res.json();
                 allJobsData = jobs;
-                displayJobs(jobs, 'jobs-list');
+                const sorted = sortJobsData(jobs);
+                displayJobs(sorted, 'jobs-list');
             } catch (error) {
                 console.error('Error loading jobs:', error);
             }
@@ -2034,7 +2375,48 @@
                 );
             }
             
+            // Apply sorting
+            filtered = sortJobsData(filtered);
             displayJobs(filtered, 'jobs-list');
+        }
+        
+        function sortJobs() {
+            currentJobSort = document.getElementById('job-sort').value;
+            searchJobs(); // Re-apply search and sort
+        }
+        
+        function sortJobsData(jobs) {
+            const sortValue = currentJobSort;
+            const sorted = [...jobs];
+            
+            sorted.sort((a, b) => {
+                switch (sortValue) {
+                    case 'date-desc':
+                        return new Date(b.discovered_at) - new Date(a.discovered_at);
+                    case 'date-asc':
+                        return new Date(a.discovered_at) - new Date(b.discovered_at);
+                    case 'score-desc':
+                        const scoreA = a.ai_match_score ?? -1;
+                        const scoreB = b.ai_match_score ?? -1;
+                        return scoreB - scoreA;
+                    case 'score-asc':
+                        const scoreA2 = a.ai_match_score ?? 999;
+                        const scoreB2 = b.ai_match_score ?? 999;
+                        return scoreA2 - scoreB2;
+                    case 'company-asc':
+                        return (a.company || '').localeCompare(b.company || '');
+                    case 'company-desc':
+                        return (b.company || '').localeCompare(a.company || '');
+                    case 'title-asc':
+                        return (a.title || '').localeCompare(b.title || '');
+                    case 'title-desc':
+                        return (b.title || '').localeCompare(a.title || '');
+                    default:
+                        return 0;
+                }
+            });
+            
+            return sorted;
         }
         
         function displayJobs(jobs, containerId) {
@@ -2048,10 +2430,9 @@
                 const score = job.ai_match_score;
                 const hasAiScore = score !== null && score !== undefined;
                 const scoreClass = hasAiScore ? (score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low') : '';
-                const isExpanded = expandedJobId === job.id;
                 
                 return `
-                    <div class="job-card ${job.is_new ? 'new' : ''} ${isExpanded ? 'expanded' : ''}" onclick="toggleJobDetails(${job.id}, event)">
+                    <div class="job-card ${job.is_new ? 'new' : ''}" onclick="showJobModal(${job.id}, event)">
                         <div class="job-title">${job.title}</div>
                         <div class="job-company">${job.company} ${job.location ? '• ' + job.location : ''}</div>
                         <div class="job-meta">
@@ -2070,55 +2451,149 @@
                                 <div style="font-size: 12px; color: #92400e; margin-top: 4px;">This job will be analyzed automatically. Check back soon!</div>
                             </div>
                         ` : ''}
-                        ${isExpanded ? `
-                            <div class="job-ai-insights" id="job-insights-${job.id}">
-                                ${job.ai_match_score === null || job.ai_match_score === undefined ? 
-                                    '<div class="loading-analysis">⏳ AI analysis pending... This will be processed automatically.</div>' :
-                                    '<div class="loading-analysis">Loading detailed AI analysis...</div>'
-                                }
-                            </div>
-                        ` : `
-                            <button class="btn btn-primary btn-sm analyze-btn" onclick="analyzeJob(${job.id}, event); event.stopPropagation();">
-                                ${job.ai_match_score === null || job.ai_match_score === undefined ? '⏳ Waiting for AI Analysis' : '🤖 Analyze with AI'}
-                            </button>
-                        `}
                         <div style="margin-top: 12px; display: flex; gap: 8px;">
+                            <button class="btn btn-primary btn-sm" onclick="showJobModal(${job.id}, event); event.stopPropagation();">View Details</button>
                             <a href="${job.url}" target="_blank" class="btn btn-secondary btn-sm" onclick="event.stopPropagation();">View Job</a>
                             <button class="btn btn-success btn-sm" onclick="updateJobStatus(${job.id}, 'saved', event); event.stopPropagation();">Save</button>
                         </div>
                     </div>
                 `;
             }).join('');
+        }
+        
+        function showJobModal(jobId, event) {
+            if (event) {
+                // Don't open modal if clicking buttons/links
+                if (event.target.tagName === 'BUTTON' || event.target.tagName === 'A') {
+                    return;
+                }
+                event.stopPropagation();
+            }
             
-            // If a job is expanded, load its analysis
-            if (expandedJobId) {
-                analyzeJob(expandedJobId, null, true);
+            const job = allJobsData.find(j => j.id === jobId);
+            if (!job) {
+                showToast('Job not found', 'error');
+                return;
+            }
+            
+            const modal = document.getElementById('job-modal');
+            const modalTitle = document.getElementById('job-modal-title');
+            const modalContent = document.getElementById('job-modal-content');
+            
+            modalTitle.textContent = job.title;
+            modalContent.innerHTML = '<div class="loading">Loading job details...</div>';
+            modal.classList.add('active');
+            
+            // Load full job details
+            loadJobDetails(jobId);
+        }
+        
+        function closeJobModal() {
+            document.getElementById('job-modal').classList.remove('active');
+        }
+        
+        // Set up modal event listeners
+        function setupJobModalListeners() {
+            // Close modal on ESC key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    const jobModal = document.getElementById('job-modal');
+                    if (jobModal && jobModal.classList.contains('active')) {
+                        closeJobModal();
+                    }
+                }
+            });
+            
+            // Close modal when clicking outside
+            const jobModal = document.getElementById('job-modal');
+            if (jobModal) {
+                jobModal.addEventListener('click', (e) => {
+                    if (e.target.id === 'job-modal') {
+                        closeJobModal();
+                    }
+                });
             }
         }
         
-        function toggleJobDetails(jobId, event) {
-            if (event && event.target.tagName === 'BUTTON' || event.target.tagName === 'A') {
-                return; // Don't toggle if clicking buttons
+        async function loadJobDetails(jobId) {
+            const modalContent = document.getElementById('job-modal-content');
+            const job = allJobsData.find(j => j.id === jobId);
+            
+            if (!job) {
+                modalContent.innerHTML = '<div class="empty-state"><p>Job not found</p></div>';
+                return;
             }
             
-            if (expandedJobId === jobId) {
-                expandedJobId = null;
-            } else {
-                expandedJobId = jobId;
-            }
+            const score = job.ai_match_score;
+            const hasAiScore = score !== null && score !== undefined;
+            const scoreClass = hasAiScore ? (score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low') : '';
             
-            // Re-render jobs to show/hide expanded view
-            displayJobs(allJobsData, 'jobs-list');
+            // Build modal content
+            let content = `
+                <div style="margin-bottom: 24px;">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 16px;">
+                        <div>
+                            <h3 style="font-size: 20px; font-weight: 600; margin-bottom: 8px;">${job.title}</h3>
+                            <p style="font-size: 16px; color: var(--text-muted); margin-bottom: 8px;">${job.company}</p>
+                            ${job.location ? `<p style="font-size: 14px; color: var(--text-muted);">📍 ${job.location}</p>` : ''}
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: end; gap: 8px;">
+                            ${hasAiScore ? `<span class="match-score ${scoreClass}" style="font-size: 14px;">Match: ${Math.round(score)}%</span>` : '<span class="ai-pending">AI Analysis Pending</span>'}
+                            ${job.is_new ? '<span class="badge badge-success">New</span>' : ''}
+                            <span style="font-size: 13px; color: var(--text-muted);">Discovered: ${new Date(job.discovered_at).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 8px; margin-bottom: 24px;">
+                        <a href="${job.url}" target="_blank" class="btn btn-primary">View Original Job Posting</a>
+                        <button class="btn btn-success" onclick="updateJobStatusFromModal(${job.id}, 'saved');">Save Job</button>
+                        <button class="btn btn-secondary" onclick="updateJobStatusFromModal(${job.id}, 'viewed');">Mark as Viewed</button>
+                        ${job.status !== 'applied' ? `<button class="btn btn-primary" onclick="updateJobStatusFromModal(${job.id}, 'applied');">Mark as Applied</button>` : ''}
+                    </div>
+                </div>
+                
+                ${job.description ? `
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">Job Description</h4>
+                        <div style="background: #f8fafc; padding: 16px; border-radius: 8px; max-height: 300px; overflow-y: auto; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">${job.description}</div>
+                    </div>
+                ` : ''}
+                
+                ${job.ai_summary ? `
+                    <div style="margin-bottom: 24px; padding: 16px; background: #f0fdf4; border-radius: 8px; border-left: 4px solid var(--success);">
+                        <h4 style="font-size: 16px; font-weight: 600; margin-bottom: 8px; color: var(--success);">🤖 AI Summary</h4>
+                        <p style="font-size: 14px; line-height: 1.6;">${job.ai_summary}</p>
+                    </div>
+                ` : ''}
+                
+                <div id="job-modal-ai-insights" style="margin-top: 24px;">
+                    ${hasAiScore ? '<div class="loading-analysis">Loading detailed AI analysis...</div>' : '<div class="loading-analysis">⏳ AI analysis pending... This will be processed automatically.</div>'}
+                </div>
+            `;
+            
+            modalContent.innerHTML = content;
+            
+            // Load AI insights if available
+            if (hasAiScore) {
+                analyzeJob(jobId, null, true);
+            }
+        }
+        
+        async function updateJobStatusFromModal(jobId, status) {
+            await updateJobStatus(jobId, status);
+            closeJobModal();
+            loadJobs();
         }
         
         async function analyzeJob(jobId, event, silent = false) {
             if (event) event.stopPropagation();
             
-            const insightsContainer = document.getElementById(`job-insights-${jobId}`);
+            // Check if modal is open, use modal container, otherwise use inline (for compatibility)
+            const insightsContainer = document.getElementById('job-modal-ai-insights') || document.getElementById(`job-insights-${jobId}`);
+            
             if (!insightsContainer && !silent) {
-                // Expand the job first
-                expandedJobId = jobId;
-                displayJobs(allJobsData, 'jobs-list');
+                // Open modal if not already open
+                showJobModal(jobId);
                 // Wait for DOM to update, then analyze
                 setTimeout(() => analyzeJob(jobId, null, true), 100);
                 return;
@@ -2139,6 +2614,13 @@
                 
                 const data = await res.json();
                 const analysis = data.analysis;
+                
+                // Update job in allJobsData if analysis includes updated match score
+                const jobIndex = allJobsData.findIndex(j => j.id === jobId);
+                if (jobIndex !== -1 && data.ai_match_score !== undefined) {
+                    allJobsData[jobIndex].ai_match_score = data.ai_match_score;
+                    allJobsData[jobIndex].ai_summary = data.ai_summary;
+                }
                 
                 if (insightsContainer) {
                     insightsContainer.innerHTML = `
@@ -2772,17 +3254,362 @@
             }, 10000); // Poll every 10 seconds
         }
         
-        // Wrap showTab to load automation command center
-        const originalShowTab = window.showTab || showTab;
-        window.showTab = function(tabName, buttonElement) {
-            if (originalShowTab) originalShowTab(tabName, buttonElement);
-            if (tabName === 'dashboard') {
-                loadAutomationCommandCenter();
-                startAutomationPolling();
+        // Start automation polling when dashboard is shown
+        // Note: loadAutomationCommandCenter and loadSettings are now called directly in showTab
+        
+        // Settings Management Functions
+        async function loadSettings() {
+            try {
+                const res = await fetch(`${API_BASE}/settings`);
+                if (!res.ok) {
+                    showToast('Error loading settings', 'error');
+                    return;
+                }
+                const settings = await res.json();
+                
+                // Notification settings
+                document.getElementById('notification-method').value = settings.notification_method || 'ntfy';
+                document.getElementById('ntfy-server').value = settings.ntfy_server || '';
+                document.getElementById('ntfy-topic').value = settings.ntfy_topic || '';
+                document.getElementById('pushover-user-key').value = settings.pushover_user_key || '';
+                document.getElementById('pushover-app-token').value = settings.pushover_app_token || '';
+                document.getElementById('telegram-bot-token').value = settings.telegram_bot_token || '';
+                document.getElementById('telegram-chat-id').value = settings.telegram_chat_id || '';
+                document.getElementById('telegram-bot-mode').value = settings.telegram_bot_mode || 'polling';
+                document.getElementById('telegram-webhook-url').value = settings.telegram_webhook_url || '';
+                
+                // Update Telegram status
+                updateTelegramStatus(settings.telegram_active);
+                updateNotificationMethodUI();
+                updateTelegramModeUI();
+                
+                // Company lifecycle settings
+                document.getElementById('company-target-count').value = settings.company_target_count || 1500;
+                document.getElementById('company-discovery-batch-size').value = settings.company_discovery_batch_size || 50;
+                document.getElementById('consecutive-empty-threshold').value = settings.consecutive_empty_threshold || 3;
+                document.getElementById('viability-score-threshold').value = settings.viability_score_threshold || 30.0;
+                document.getElementById('company-refresh-schedule').value = settings.company_refresh_schedule || 'daily';
+                document.getElementById('web-search-enabled').checked = settings.web_search_enabled !== false;
+                
+                // Task workspace settings
+                document.getElementById('auto-generate-tasks').checked = settings.auto_generate_tasks !== false;
+                document.getElementById('task-match-score-threshold').value = settings.task_match_score_threshold || 50.0;
+                document.getElementById('task-reminder-check-interval').value = settings.task_reminder_check_interval_minutes || 60;
+                
+                // Crawl scheduling settings
+                document.getElementById('crawl-interval-minutes').value = settings.crawl_interval_minutes || 30;
+                document.getElementById('daily-top-jobs-count').value = settings.daily_top_jobs_count || 5;
+                // Convert HH:MM to time input format
+                const timeParts = (settings.daily_generation_time || '15:00').split(':');
+                document.getElementById('daily-generation-time').value = `${timeParts[0]}:${timeParts[1] || '00'}`;
+                
+                // AI settings
+                document.getElementById('ollama-host').value = settings.ollama_host || '';
+                document.getElementById('ollama-model').value = settings.ollama_model || '';
+                
+                // OpenWebUI settings
+                document.getElementById('openwebui-enabled').checked = settings.openwebui_enabled !== false;
+                document.getElementById('openwebui-url').value = settings.openwebui_url || '';
+            } catch (error) {
+                console.error('Error loading settings:', error);
+                showToast('Error loading settings', 'error');
             }
-        };
+        }
+        
+        function toggleSettingsSection(sectionName) {
+            const section = document.getElementById(`${sectionName}-section`);
+            const toggle = document.getElementById(`${sectionName}-toggle`);
+            
+            if (section.classList.contains('active')) {
+                section.classList.remove('active');
+                section.style.display = 'none';
+                toggle.textContent = '▼';
+            } else {
+                section.classList.add('active');
+                section.style.display = 'block';
+                toggle.textContent = '▲';
+            }
+        }
+        
+        function updateNotificationMethodUI() {
+            const method = document.getElementById('notification-method').value;
+            
+            // Hide all notification method settings
+            document.querySelectorAll('.notification-method-settings').forEach(el => {
+                el.style.display = 'none';
+            });
+            
+            // Show selected method
+            if (method === 'ntfy') {
+                document.getElementById('ntfy-settings').style.display = 'block';
+            } else if (method === 'pushover') {
+                document.getElementById('pushover-settings').style.display = 'block';
+            } else if (method === 'telegram') {
+                document.getElementById('telegram-settings').style.display = 'block';
+            }
+        }
+        
+        function updateTelegramModeUI() {
+            const mode = document.getElementById('telegram-bot-mode').value;
+            const webhookSettings = document.getElementById('telegram-webhook-settings');
+            
+            if (mode === 'webhook') {
+                webhookSettings.style.display = 'block';
+            } else {
+                webhookSettings.style.display = 'none';
+            }
+        }
+        
+        function togglePasswordVisibility(inputId) {
+            const input = document.getElementById(inputId);
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+        
+        function updateTelegramStatus(isActive) {
+            const statusIndicator = document.getElementById('telegram-status');
+            const statusText = document.getElementById('telegram-status-text');
+            
+            if (isActive) {
+                statusIndicator.style.background = '#10b981';
+                statusText.textContent = 'Status: Active';
+                statusText.style.color = '#10b981';
+            } else {
+                statusIndicator.style.background = '#ccc';
+                statusText.textContent = 'Status: Inactive';
+                statusText.style.color = 'var(--text-muted)';
+            }
+        }
+        
+        async function saveNotificationSettings() {
+            const updates = {
+                notification_method: document.getElementById('notification-method').value,
+                ntfy_server: document.getElementById('ntfy-server').value,
+                ntfy_topic: document.getElementById('ntfy-topic').value,
+                pushover_user_key: document.getElementById('pushover-user-key').value,
+                pushover_app_token: document.getElementById('pushover-app-token').value,
+                telegram_bot_token: document.getElementById('telegram-bot-token').value,
+                telegram_chat_id: document.getElementById('telegram-chat-id').value,
+                telegram_bot_mode: document.getElementById('telegram-bot-mode').value,
+                telegram_webhook_url: document.getElementById('telegram-webhook-url').value
+            };
+            
+            try {
+                const res = await fetch(`${API_BASE}/settings`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(updates)
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    showToast(error.detail || 'Error saving settings', 'error');
+                    return;
+                }
+                
+                showToast('Notification settings saved successfully');
+                // Reload settings to update status
+                loadSettings();
+            } catch (error) {
+                console.error('Error saving notification settings:', error);
+                showToast('Error saving settings', 'error');
+            }
+        }
+        
+        async function saveCompanyLifecycleSettings() {
+            const updates = {
+                company_target_count: parseInt(document.getElementById('company-target-count').value),
+                company_discovery_batch_size: parseInt(document.getElementById('company-discovery-batch-size').value),
+                consecutive_empty_threshold: parseInt(document.getElementById('consecutive-empty-threshold').value),
+                viability_score_threshold: parseFloat(document.getElementById('viability-score-threshold').value),
+                company_refresh_schedule: document.getElementById('company-refresh-schedule').value,
+                web_search_enabled: document.getElementById('web-search-enabled').checked
+            };
+            
+            try {
+                const res = await fetch(`${API_BASE}/settings`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(updates)
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    showToast(error.detail || 'Error saving settings', 'error');
+                    return;
+                }
+                
+                showToast('Company lifecycle settings saved successfully');
+            } catch (error) {
+                console.error('Error saving company lifecycle settings:', error);
+                showToast('Error saving settings', 'error');
+            }
+        }
+        
+        async function saveTaskWorkspaceSettings() {
+            const updates = {
+                auto_generate_tasks: document.getElementById('auto-generate-tasks').checked,
+                task_match_score_threshold: parseFloat(document.getElementById('task-match-score-threshold').value),
+                task_reminder_check_interval_minutes: parseInt(document.getElementById('task-reminder-check-interval').value)
+            };
+            
+            try {
+                const res = await fetch(`${API_BASE}/settings`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(updates)
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    showToast(error.detail || 'Error saving settings', 'error');
+                    return;
+                }
+                
+                showToast('Task workspace settings saved successfully');
+            } catch (error) {
+                console.error('Error saving task workspace settings:', error);
+                showToast('Error saving settings', 'error');
+            }
+        }
+        
+        async function saveCrawlSchedulingSettings() {
+            const timeValue = document.getElementById('daily-generation-time').value;
+            const updates = {
+                crawl_interval_minutes: parseInt(document.getElementById('crawl-interval-minutes').value),
+                daily_top_jobs_count: parseInt(document.getElementById('daily-top-jobs-count').value),
+                daily_generation_time: timeValue || '15:00'
+            };
+            
+            try {
+                const res = await fetch(`${API_BASE}/settings`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(updates)
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    showToast(error.detail || 'Error saving settings', 'error');
+                    return;
+                }
+                
+                showToast('Crawl scheduling settings saved successfully');
+            } catch (error) {
+                console.error('Error saving crawl scheduling settings:', error);
+                showToast('Error saving settings', 'error');
+            }
+        }
+        
+        async function saveAISettings() {
+            const updates = {
+                ollama_host: document.getElementById('ollama-host').value,
+                ollama_model: document.getElementById('ollama-model').value
+            };
+            
+            try {
+                const res = await fetch(`${API_BASE}/settings`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(updates)
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    showToast(error.detail || 'Error saving settings', 'error');
+                    return;
+                }
+                
+                showToast('AI settings saved successfully');
+            } catch (error) {
+                console.error('Error saving AI settings:', error);
+                showToast('Error saving settings', 'error');
+            }
+        }
+        
+        async function saveOpenWebUISettings() {
+            const updates = {
+                openwebui_enabled: document.getElementById('openwebui-enabled').checked,
+                openwebui_url: document.getElementById('openwebui-url').value
+            };
+            
+            try {
+                const res = await fetch(`${API_BASE}/settings`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(updates)
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    showToast(error.detail || 'Error saving settings', 'error');
+                    return;
+                }
+                
+                showToast('OpenWebUI settings saved successfully');
+            } catch (error) {
+                console.error('Error saving OpenWebUI settings:', error);
+                showToast('Error saving settings', 'error');
+            }
+        }
+        
+        async function testTelegramBot() {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Testing...';
+            
+            try {
+                const res = await fetch(`${API_BASE}/settings/telegram/test`, {
+                    method: 'POST'
+                });
+                
+                const result = await res.json();
+                
+                if (result.success) {
+                    showToast('✅ ' + result.message, 'success');
+                    updateTelegramStatus(true);
+                } else {
+                    showToast('❌ ' + result.message, 'error');
+                    updateTelegramStatus(false);
+                }
+            } catch (error) {
+                console.error('Error testing Telegram bot:', error);
+                showToast('Error testing Telegram bot', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        async function testNotification(event) {
+            const btn = event ? event.target : (window.event ? window.event.target : this);
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            
+            try {
+                const res = await fetch(`${API_BASE}/settings/notifications/test`, {
+                    method: 'POST'
+                });
+                
+                const result = await res.json();
+                
+                if (result.success) {
+                    showToast('✅ ' + result.message, 'success');
+                } else {
+                    showToast('❌ ' + result.message, 'error');
+                }
+            } catch (error) {
+                console.error('Error testing notification:', error);
+                showToast('Error testing notification', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
         
         // Initial load
+        setupJobModalListeners();
         loadDashboard();
         loadCompanies();
         startCrawlStatusPolling(); // Start polling for crawl status

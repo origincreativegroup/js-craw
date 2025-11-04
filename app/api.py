@@ -1,4 +1,5 @@
 """FastAPI routes"""
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
@@ -8,10 +9,13 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models import Job, SearchCriteria, User, FollowUp, CrawlLog, Company
+from app.models import Job, SearchCriteria, User, FollowUp, CrawlLog, Company, Task
 from app.utils.crypto import encrypt_password
 from app.crawler.orchestrator import CrawlerOrchestrator
+from app.tasks.task_service import TaskService
+from app.ai.task_generator import TaskGenerator
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -77,6 +81,32 @@ class CompanyUpdate(BaseModel):
     crawler_type: Optional[str] = None
     crawler_config: Optional[dict] = None
     is_active: Optional[bool] = None
+
+
+class TaskCreate(BaseModel):
+    job_id: int
+    task_type: str
+    title: str
+    due_date: Optional[datetime] = None
+    priority: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class TaskUpdate(BaseModel):
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    due_date: Optional[datetime] = None
+    title: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class TaskSnooze(BaseModel):
+    duration: str = "1d"  # 1h, 1d, 3d, 1w
+
+
+class BulkTaskAction(BaseModel):
+    task_ids: List[int]
+    action: str  # complete, cancel, snooze
 
 
 # Search Criteria endpoints
@@ -244,6 +274,12 @@ async def get_companies(
                 "last_crawled_at": c.last_crawled_at.isoformat() if c.last_crawled_at else None,
                 "jobs_found_total": c.jobs_found_total,
                 "created_at": c.created_at.isoformat(),
+                "consecutive_empty_crawls": c.consecutive_empty_crawls,
+                "viability_score": c.viability_score,
+                "viability_last_checked": c.viability_last_checked.isoformat() if c.viability_last_checked else None,
+                "discovery_source": c.discovery_source,
+                "last_successful_crawl": c.last_successful_crawl.isoformat() if c.last_successful_crawl else None,
+                "priority_score": c.priority_score,
             }
             for c in companies
         ]
@@ -275,6 +311,12 @@ async def get_company(
             "jobs_found_total": company.jobs_found_total,
             "created_at": company.created_at.isoformat(),
             "updated_at": company.updated_at.isoformat(),
+            "consecutive_empty_crawls": company.consecutive_empty_crawls,
+            "viability_score": company.viability_score,
+            "viability_last_checked": company.viability_last_checked.isoformat() if company.viability_last_checked else None,
+            "discovery_source": company.discovery_source,
+            "last_successful_crawl": company.last_successful_crawl.isoformat() if company.last_successful_crawl else None,
+            "priority_score": company.priority_score,
         }
     except HTTPException:
         raise
@@ -359,6 +401,193 @@ async def delete_company(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting company: {str(e)}")
+
+
+# Company lifecycle management endpoints
+@router.post("/companies/discover")
+async def discover_companies(
+    keywords: Optional[str] = Query(None, description="Search keywords"),
+    max_companies: int = Query(50, description="Maximum companies to discover"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually trigger company discovery"""
+    try:
+        from app.crawler.company_discovery import CompanyDiscoveryService
+        
+        # Get existing company names for deduplication
+        result = await db.execute(select(Company.name))
+        existing_names = {row[0].lower() for row in result.fetchall()}
+        
+        # Default keywords if not provided
+        if not keywords:
+            keywords = "software engineer"
+        
+        discovery_service = CompanyDiscoveryService()
+        discovered = await discovery_service.discover_companies(
+            keywords=keywords,
+            max_companies=max_companies,
+            existing_company_names=existing_names
+        )
+        
+        return {
+            "discovered": len(discovered),
+            "companies": discovered[:10]  # Return first 10 for preview
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error discovering companies: {str(e)}")
+
+
+@router.post("/companies/{company_id}/analyze-viability")
+async def analyze_company_viability(
+    company_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Analyze viability of a single company"""
+    try:
+        from app.services.company_lifecycle import CompanyLifecycleManager
+        
+        lifecycle_manager = CompanyLifecycleManager()
+        result = await lifecycle_manager.analyze_single_company(company_id)
+        
+        if 'error' in result:
+            raise HTTPException(status_code=404, detail=result['error'])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing company: {str(e)}")
+
+
+@router.get("/companies/health")
+async def get_company_health(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get overall company list health metrics"""
+    try:
+        from sqlalchemy import func
+        
+        # Total companies
+        result = await db.execute(select(func.count(Company.id)))
+        total = result.scalar() or 0
+        
+        # Active companies
+        result = await db.execute(
+            select(func.count(Company.id)).where(Company.is_active == True)
+        )
+        active = result.scalar() or 0
+        
+        # Companies with high consecutive empty crawls
+        result = await db.execute(
+            select(func.count(Company.id)).where(
+                Company.is_active == True,
+                Company.consecutive_empty_crawls >= 2
+            )
+        )
+        needs_attention = result.scalar() or 0
+        
+        # Companies needing viability check
+        result = await db.execute(
+            select(func.count(Company.id)).where(
+                Company.is_active == True,
+                Company.viability_last_checked.is_(None)
+            )
+        )
+        unchecked = result.scalar() or 0
+        
+        # Average viability score
+        result = await db.execute(
+            select(func.avg(Company.viability_score)).where(
+                Company.is_active == True,
+                Company.viability_score.isnot(None)
+            )
+        )
+        avg_viability = result.scalar() or 0.0
+        
+        return {
+            "total_companies": total,
+            "active_companies": active,
+            "inactive_companies": total - active,
+            "needs_attention": needs_attention,
+            "unchecked_viability": unchecked,
+            "average_viability_score": round(avg_viability, 2) if avg_viability else None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading company health: {str(e)}")
+
+
+@router.post("/automation/company-refresh")
+async def trigger_company_refresh(
+    db: AsyncSession = Depends(get_db)
+):
+    """Trigger daily company refresh workflow"""
+    try:
+        from app.services.company_lifecycle import CompanyLifecycleManager
+        
+        lifecycle_manager = CompanyLifecycleManager()
+        summary = await lifecycle_manager.refresh_company_list()
+        
+        return {
+            "message": "Company refresh completed",
+            "summary": summary
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error refreshing companies: {str(e)}")
+
+
+@router.get("/automation/company-refresh-config")
+async def get_company_refresh_config():
+    """Get company refresh configuration"""
+    from app.config import settings
+    
+    return {
+        "target_count": settings.COMPANY_TARGET_COUNT,
+        "discovery_batch_size": settings.COMPANY_DISCOVERY_BATCH_SIZE,
+        "consecutive_empty_threshold": settings.CONSECUTIVE_EMPTY_THRESHOLD,
+        "viability_score_threshold": settings.VIABILITY_SCORE_THRESHOLD,
+        "refresh_schedule": settings.COMPANY_REFRESH_SCHEDULE,
+        "web_search_enabled": settings.WEB_SEARCH_ENABLED
+    }
+
+
+class CompanyRefreshConfigUpdate(BaseModel):
+    target_count: Optional[int] = None
+    discovery_batch_size: Optional[int] = None
+    consecutive_empty_threshold: Optional[int] = None
+    viability_score_threshold: Optional[float] = None
+    web_search_enabled: Optional[bool] = None
+
+
+@router.patch("/automation/company-refresh-config")
+async def update_company_refresh_config(
+    update: CompanyRefreshConfigUpdate
+):
+    """Update company refresh configuration"""
+    from app.config import settings
+    
+    # Update settings (in-memory only, doesn't persist to .env)
+    if update.target_count is not None:
+        settings.COMPANY_TARGET_COUNT = update.target_count
+    if update.discovery_batch_size is not None:
+        settings.COMPANY_DISCOVERY_BATCH_SIZE = update.discovery_batch_size
+    if update.consecutive_empty_threshold is not None:
+        settings.CONSECUTIVE_EMPTY_THRESHOLD = update.consecutive_empty_threshold
+    if update.viability_score_threshold is not None:
+        settings.VIABILITY_SCORE_THRESHOLD = update.viability_score_threshold
+    if update.web_search_enabled is not None:
+        settings.WEB_SEARCH_ENABLED = update.web_search_enabled
+    
+    return {
+        "message": "Configuration updated",
+        "config": {
+            "target_count": settings.COMPANY_TARGET_COUNT,
+            "discovery_batch_size": settings.COMPANY_DISCOVERY_BATCH_SIZE,
+            "consecutive_empty_threshold": settings.CONSECUTIVE_EMPTY_THRESHOLD,
+            "viability_score_threshold": settings.VIABILITY_SCORE_THRESHOLD,
+            "refresh_schedule": settings.COMPANY_REFRESH_SCHEDULE,
+            "web_search_enabled": settings.WEB_SEARCH_ENABLED
+        }
+    }
 
 
 # Job endpoints
@@ -1097,4 +1326,662 @@ async def get_openwebui_info(
             "Analyze job descriptions"
         ]
     }
+
+
+# Telegram webhook endpoint
+@router.post("/telegram/webhook")
+async def telegram_webhook(
+    request: Request
+):
+    """Handle Telegram webhook updates"""
+    try:
+        bot_agent = getattr(request.app.state, 'telegram_bot', None)
+        if not bot_agent or not bot_agent.application:
+            return {"ok": False, "error": "Telegram bot not initialized"}
+        
+        # Get update data from request body
+        update_data = await request.json()
+        
+        from telegram import Update
+        update = Update.de_json(update_data, bot_agent.application.bot)
+        
+        # Process update
+        await bot_agent.application.process_update(update)
+        
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Error processing Telegram webhook: {e}", exc_info=True)
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/telegram/webhook")
+async def telegram_webhook_info(request: Request):
+    """Get Telegram webhook information"""
+    from app.config import settings
+    
+    bot_agent = getattr(request.app.state, 'telegram_bot', None)
+    is_active = bot_agent is not None and bot_agent.application is not None
+    
+    return {
+        "enabled": bool(settings.TELEGRAM_BOT_TOKEN),
+        "active": is_active,
+        "webhook_url": f"{request.base_url}api/telegram/webhook",
+        "description": "Telegram bot for interactive job search notifications",
+        "features": [
+            "Interactive commands (/jobs, /stats, /search, etc.)",
+            "Rich notifications with inline buttons",
+            "Job detail views and actions",
+            "Crawl status and control"
+        ]
+    }
+
+
+# Task endpoints
+@router.get("/tasks")
+async def get_tasks(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    priority: Optional[str] = Query(None, description="Filter by priority"),
+    task_type: Optional[str] = Query(None, description="Filter by task type"),
+    job_id: Optional[int] = Query(None, description="Filter by job ID"),
+    include_snoozed: bool = Query(True, description="Include snoozed tasks"),
+    limit: int = Query(100, description="Maximum number of tasks to return"),
+    db: AsyncSession = Depends(get_db)
+):
+    """List tasks with filters"""
+    try:
+        tasks = await TaskService.list_tasks(
+            db,
+            status=status,
+            priority=priority,
+            task_type=task_type,
+            job_id=job_id,
+            include_snoozed=include_snoozed,
+            limit=limit
+        )
+        
+        return [
+            {
+                "id": t.id,
+                "job_id": t.job_id,
+                "task_type": t.task_type,
+                "title": t.title,
+                "priority": t.priority,
+                "status": t.status,
+                "due_date": t.due_date.isoformat() if t.due_date else None,
+                "snooze_until": t.snooze_until.isoformat() if t.snooze_until else None,
+                "snooze_count": t.snooze_count,
+                "notes": t.notes,
+                "recommended_by": t.recommended_by,
+                "created_at": t.created_at.isoformat(),
+                "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                "job": {
+                    "id": t.job.id,
+                    "title": t.job.title,
+                    "company": t.job.company,
+                    "location": t.job.location
+                } if t.job else None
+            }
+            for t in tasks
+        ]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error listing tasks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tasks")
+async def create_task(
+    task: TaskCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new task"""
+    try:
+        new_task = await TaskService.create_task(
+            db=db,
+            job_id=task.job_id,
+            task_type=task.task_type,
+            title=task.title,
+            due_date=task.due_date,
+            priority=task.priority,
+            notes=task.notes,
+            recommended_by="user"
+        )
+        
+        return {
+            "id": new_task.id,
+            "message": "Task created",
+            "task": {
+                "id": new_task.id,
+                "job_id": new_task.job_id,
+                "task_type": new_task.task_type,
+                "title": new_task.title,
+                "priority": new_task.priority,
+                "status": new_task.status,
+                "due_date": new_task.due_date.isoformat(),
+            }
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error creating task: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tasks/{task_id}")
+async def get_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get task details"""
+    task = await TaskService.get_task(db, task_id)
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    return {
+        "id": task.id,
+        "job_id": task.job_id,
+        "task_type": task.task_type,
+        "title": task.title,
+        "priority": task.priority,
+        "status": task.status,
+        "due_date": task.due_date.isoformat() if task.due_date else None,
+        "snooze_until": task.snooze_until.isoformat() if task.snooze_until else None,
+        "snooze_count": task.snooze_count,
+        "notes": task.notes,
+        "recommended_by": task.recommended_by,
+        "ai_insights": task.ai_insights,
+        "created_at": task.created_at.isoformat(),
+        "updated_at": task.updated_at.isoformat(),
+        "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+        "job": {
+            "id": task.job.id,
+            "title": task.job.title,
+            "company": task.job.company,
+            "location": task.job.location,
+            "url": task.job.url,
+            "ai_match_score": task.job.ai_match_score
+        } if task.job else None
+    }
+
+
+@router.patch("/tasks/{task_id}")
+async def update_task(
+    task_id: int,
+    update: TaskUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update a task"""
+    try:
+        task = await TaskService.update_task(
+            db=db,
+            task_id=task_id,
+            status=update.status,
+            priority=update.priority,
+            due_date=update.due_date,
+            title=update.title,
+            notes=update.notes
+        )
+        
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        return {"message": "Task updated", "task_id": task.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating task: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/snooze")
+async def snooze_task(
+    task_id: int,
+    snooze: TaskSnooze,
+    db: AsyncSession = Depends(get_db)
+):
+    """Snooze a task"""
+    try:
+        task = await TaskService.snooze_task(db, task_id, snooze.duration)
+        
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        return {
+            "message": "Task snoozed",
+            "task_id": task.id,
+            "snooze_until": task.snooze_until.isoformat() if task.snooze_until else None
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error snoozing task: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/complete")
+async def complete_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Mark a task as completed"""
+    try:
+        task = await TaskService.complete_task(db, task_id)
+        
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        return {
+            "message": "Task completed",
+            "task_id": task.id,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error completing task: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tasks/recommendations")
+async def get_task_recommendations(
+    limit: int = Query(10, description="Maximum number of recommendations"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get AI-generated task recommendations"""
+    try:
+        recommendations = await TaskGenerator.generate_task_recommendations(db, limit=limit)
+        return recommendations
+    except Exception as e:
+        logger.error(f"Error getting task recommendations: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tasks/generate-from-job/{job_id}")
+async def generate_tasks_from_job(
+    job_id: int,
+    force_regenerate: bool = Query(False, description="Force regeneration even if tasks exist"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate tasks from job insights"""
+    try:
+        result = await db.execute(select(Job).where(Job.id == job_id))
+        job = result.scalar_one_or_none()
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        tasks = await TaskGenerator.generate_tasks_for_job(db, job, force_regenerate=force_regenerate)
+        
+        return {
+            "message": f"Generated {len(tasks)} tasks",
+            "job_id": job_id,
+            "tasks": [
+                {
+                    "id": t.id,
+                    "task_type": t.task_type,
+                    "title": t.title,
+                    "priority": t.priority,
+                    "due_date": t.due_date.isoformat()
+                }
+                for t in tasks
+            ]
+        }
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error generating tasks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tasks/bulk-action")
+async def bulk_task_action(
+    action: BulkTaskAction,
+    db: AsyncSession = Depends(get_db)
+):
+    """Perform bulk action on tasks"""
+    try:
+        results = await TaskService.bulk_action(db, action.task_ids, action.action)
+        
+        return {
+            "message": f"Bulk action '{action.action}' completed",
+            "success": results["success"],
+            "failed": results["failed"],
+            "total": len(action.task_ids)
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error performing bulk action: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Settings endpoints
+class SettingsRead(BaseModel):
+    """Settings read model - returns all current settings"""
+    # Notifications
+    notification_method: str
+    ntfy_server: str
+    ntfy_topic: Optional[str] = None
+    pushover_user_key: Optional[str] = None
+    pushover_app_token: Optional[str] = None
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    telegram_bot_mode: str
+    telegram_webhook_url: Optional[str] = None
+    
+    # Company lifecycle
+    company_target_count: int
+    company_discovery_batch_size: int
+    consecutive_empty_threshold: int
+    viability_score_threshold: float
+    company_refresh_schedule: str
+    web_search_enabled: bool
+    
+    # Task workspace
+    auto_generate_tasks: bool
+    task_match_score_threshold: float
+    task_reminder_check_interval_minutes: int
+    
+    # Crawl scheduling
+    crawl_interval_minutes: int
+    daily_top_jobs_count: int
+    daily_generation_time: str
+    
+    # AI/Ollama
+    ollama_host: str
+    ollama_model: str
+    
+    # OpenWebUI
+    openwebui_enabled: bool
+    openwebui_url: str
+
+
+class SettingsUpdate(BaseModel):
+    """Settings update model - all fields optional"""
+    # Notifications
+    notification_method: Optional[str] = None
+    ntfy_server: Optional[str] = None
+    ntfy_topic: Optional[str] = None
+    pushover_user_key: Optional[str] = None
+    pushover_app_token: Optional[str] = None
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    telegram_bot_mode: Optional[str] = None
+    telegram_webhook_url: Optional[str] = None
+    
+    # Company lifecycle
+    company_target_count: Optional[int] = None
+    company_discovery_batch_size: Optional[int] = None
+    consecutive_empty_threshold: Optional[int] = None
+    viability_score_threshold: Optional[float] = None
+    company_refresh_schedule: Optional[str] = None
+    web_search_enabled: Optional[bool] = None
+    
+    # Task workspace
+    auto_generate_tasks: Optional[bool] = None
+    task_match_score_threshold: Optional[float] = None
+    task_reminder_check_interval_minutes: Optional[int] = None
+    
+    # Crawl scheduling
+    crawl_interval_minutes: Optional[int] = None
+    daily_top_jobs_count: Optional[int] = None
+    daily_generation_time: Optional[str] = None
+    
+    # AI/Ollama
+    ollama_host: Optional[str] = None
+    ollama_model: Optional[str] = None
+    
+    # OpenWebUI
+    openwebui_enabled: Optional[bool] = None
+    openwebui_url: Optional[str] = None
+
+
+@router.get("/settings")
+async def get_settings(request: Request):
+    """Get all current settings"""
+    from app.config import settings
+    
+    # Get Telegram bot status
+    bot_agent = getattr(request.app.state, 'telegram_bot', None)
+    telegram_active = bot_agent is not None and bot_agent.application is not None
+    
+    return {
+        **SettingsRead(
+            notification_method=settings.NOTIFICATION_METHOD,
+            ntfy_server=settings.NTFY_SERVER,
+            ntfy_topic=settings.NTFY_TOPIC,
+            pushover_user_key=settings.PUSHOVER_USER_KEY,
+            pushover_app_token=settings.PUSHOVER_APP_TOKEN,
+            telegram_bot_token=settings.TELEGRAM_BOT_TOKEN,
+            telegram_chat_id=settings.TELEGRAM_CHAT_ID,
+            telegram_bot_mode=settings.TELEGRAM_BOT_MODE,
+            telegram_webhook_url=settings.TELEGRAM_WEBHOOK_URL,
+            company_target_count=settings.COMPANY_TARGET_COUNT,
+            company_discovery_batch_size=settings.COMPANY_DISCOVERY_BATCH_SIZE,
+            consecutive_empty_threshold=settings.CONSECUTIVE_EMPTY_THRESHOLD,
+            viability_score_threshold=settings.VIABILITY_SCORE_THRESHOLD,
+            company_refresh_schedule=settings.COMPANY_REFRESH_SCHEDULE,
+            web_search_enabled=settings.WEB_SEARCH_ENABLED,
+            auto_generate_tasks=settings.AUTO_GENERATE_TASKS,
+            task_match_score_threshold=settings.TASK_MATCH_SCORE_THRESHOLD,
+            task_reminder_check_interval_minutes=settings.TASK_REMINDER_CHECK_INTERVAL_MINUTES,
+            crawl_interval_minutes=settings.CRAWL_INTERVAL_MINUTES,
+            daily_top_jobs_count=settings.DAILY_TOP_JOBS_COUNT,
+            daily_generation_time=settings.DAILY_GENERATION_TIME,
+            ollama_host=settings.OLLAMA_HOST,
+            ollama_model=settings.OLLAMA_MODEL,
+            openwebui_enabled=settings.OPENWEBUI_ENABLED,
+            openwebui_url=settings.OPENWEBUI_URL
+        ).dict(),
+        "telegram_active": telegram_active
+    }
+
+
+@router.patch("/settings")
+async def update_settings(request: Request, update: SettingsUpdate):
+    """Update settings (in-memory only, does not persist to .env)"""
+    from app.config import settings
+    
+    try:
+        # Validate and update settings
+        updates = update.dict(exclude_unset=True)
+        
+        # Notification settings
+        if "notification_method" in updates:
+            if updates["notification_method"] not in ["ntfy", "pushover", "telegram"]:
+                raise HTTPException(status_code=400, detail="Invalid notification method. Must be ntfy, pushover, or telegram")
+            settings.NOTIFICATION_METHOD = updates["notification_method"]
+        
+        if "ntfy_server" in updates:
+            settings.NTFY_SERVER = updates["ntfy_server"]
+        if "ntfy_topic" in updates:
+            settings.NTFY_TOPIC = updates["ntfy_topic"]
+        if "pushover_user_key" in updates:
+            settings.PUSHOVER_USER_KEY = updates["pushover_user_key"]
+        if "pushover_app_token" in updates:
+            settings.PUSHOVER_APP_TOKEN = updates["pushover_app_token"]
+        if "telegram_bot_token" in updates:
+            settings.TELEGRAM_BOT_TOKEN = updates["telegram_bot_token"]
+        if "telegram_chat_id" in updates:
+            settings.TELEGRAM_CHAT_ID = updates["telegram_chat_id"]
+        if "telegram_bot_mode" in updates:
+            if updates["telegram_bot_mode"] not in ["polling", "webhook"]:
+                raise HTTPException(status_code=400, detail="Invalid bot mode. Must be polling or webhook")
+            settings.TELEGRAM_BOT_MODE = updates["telegram_bot_mode"]
+        if "telegram_webhook_url" in updates:
+            settings.TELEGRAM_WEBHOOK_URL = updates["telegram_webhook_url"]
+        
+        # Company lifecycle settings
+        if "company_target_count" in updates:
+            if updates["company_target_count"] < 1:
+                raise HTTPException(status_code=400, detail="Company target count must be at least 1")
+            settings.COMPANY_TARGET_COUNT = updates["company_target_count"]
+        if "company_discovery_batch_size" in updates:
+            if updates["company_discovery_batch_size"] < 1:
+                raise HTTPException(status_code=400, detail="Discovery batch size must be at least 1")
+            settings.COMPANY_DISCOVERY_BATCH_SIZE = updates["company_discovery_batch_size"]
+        if "consecutive_empty_threshold" in updates:
+            if updates["consecutive_empty_threshold"] < 1:
+                raise HTTPException(status_code=400, detail="Consecutive empty threshold must be at least 1")
+            settings.CONSECUTIVE_EMPTY_THRESHOLD = updates["consecutive_empty_threshold"]
+        if "viability_score_threshold" in updates:
+            threshold = updates["viability_score_threshold"]
+            if threshold < 0 or threshold > 100:
+                raise HTTPException(status_code=400, detail="Viability score threshold must be between 0 and 100")
+            settings.VIABILITY_SCORE_THRESHOLD = threshold
+        if "company_refresh_schedule" in updates:
+            settings.COMPANY_REFRESH_SCHEDULE = updates["company_refresh_schedule"]
+        if "web_search_enabled" in updates:
+            settings.WEB_SEARCH_ENABLED = updates["web_search_enabled"]
+        
+        # Task workspace settings
+        if "auto_generate_tasks" in updates:
+            settings.AUTO_GENERATE_TASKS = updates["auto_generate_tasks"]
+        if "task_match_score_threshold" in updates:
+            threshold = updates["task_match_score_threshold"]
+            if threshold < 0 or threshold > 100:
+                raise HTTPException(status_code=400, detail="Task match score threshold must be between 0 and 100")
+            settings.TASK_MATCH_SCORE_THRESHOLD = threshold
+        if "task_reminder_check_interval_minutes" in updates:
+            if updates["task_reminder_check_interval_minutes"] < 1:
+                raise HTTPException(status_code=400, detail="Task reminder check interval must be at least 1 minute")
+            settings.TASK_REMINDER_CHECK_INTERVAL_MINUTES = updates["task_reminder_check_interval_minutes"]
+        
+        # Crawl scheduling settings
+        if "crawl_interval_minutes" in updates:
+            if updates["crawl_interval_minutes"] < 1:
+                raise HTTPException(status_code=400, detail="Crawl interval must be at least 1 minute")
+            settings.CRAWL_INTERVAL_MINUTES = updates["crawl_interval_minutes"]
+            # Update scheduler if it exists
+            scheduler = getattr(request.app.state, 'scheduler', None)
+            if scheduler:
+                from apscheduler.triggers.interval import IntervalTrigger
+                try:
+                    scheduler.modify_job(
+                        "crawl_all_companies",
+                        trigger=IntervalTrigger(minutes=settings.CRAWL_INTERVAL_MINUTES)
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not update scheduler interval: {e}")
+        if "daily_top_jobs_count" in updates:
+            if updates["daily_top_jobs_count"] < 1:
+                raise HTTPException(status_code=400, detail="Daily top jobs count must be at least 1")
+            settings.DAILY_TOP_JOBS_COUNT = updates["daily_top_jobs_count"]
+        if "daily_generation_time" in updates:
+            # Validate time format HH:MM
+            time_str = updates["daily_generation_time"]
+            try:
+                parts = time_str.split(":")
+                if len(parts) != 2:
+                    raise ValueError
+                hour = int(parts[0])
+                minute = int(parts[1])
+                if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+                    raise ValueError
+                settings.DAILY_GENERATION_TIME = time_str
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Daily generation time must be in HH:MM format (e.g., 15:00)")
+        
+        # AI/Ollama settings
+        if "ollama_host" in updates:
+            settings.OLLAMA_HOST = updates["ollama_host"]
+        if "ollama_model" in updates:
+            settings.OLLAMA_MODEL = updates["ollama_model"]
+        
+        # OpenWebUI settings
+        if "openwebui_enabled" in updates:
+            settings.OPENWEBUI_ENABLED = updates["openwebui_enabled"]
+        if "openwebui_url" in updates:
+            settings.OPENWEBUI_URL = updates["openwebui_url"]
+        
+        return {
+            "message": "Settings updated successfully",
+            "updated_fields": list(updates.keys()),
+            "note": "Changes are in-memory only and will be lost on restart. Update .env file for persistence."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating settings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error updating settings: {str(e)}")
+
+
+@router.post("/settings/telegram/test")
+async def test_telegram_bot(request: Request):
+    """Test Telegram bot connection"""
+    from app.config import settings
+    
+    if not settings.TELEGRAM_BOT_TOKEN or not settings.TELEGRAM_CHAT_ID:
+        raise HTTPException(status_code=400, detail="Telegram bot token and chat ID must be configured")
+    
+    try:
+        import httpx
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={
+                    "chat_id": settings.TELEGRAM_CHAT_ID,
+                    "text": "✅ Test message from Job Search Crawler!\n\nYour Telegram bot is configured correctly.",
+                    "parse_mode": "Markdown"
+                },
+                timeout=10.0
+            )
+            
+            if response.status_code == 200:
+                return {
+                    "success": True,
+                    "message": "Test message sent successfully!"
+                }
+            else:
+                error_data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+                error_desc = error_data.get("description", f"HTTP {response.status_code}")
+                return {
+                    "success": False,
+                    "message": f"Failed to send test message: {error_desc}"
+                }
+    except Exception as e:
+        logger.error(f"Error testing Telegram bot: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error testing Telegram bot: {str(e)}")
+
+
+@router.post("/settings/notifications/test")
+async def test_notification(request: Request):
+    """Send a test notification using the configured method"""
+    from app.config import settings
+    from app.notifications.notifier import NotificationService
+    
+    try:
+        notifier = NotificationService()
+        
+        # Get bot agent if available
+        bot_agent = getattr(request.app.state, 'telegram_bot', None)
+        if bot_agent:
+            notifier._bot_agent = bot_agent
+        
+        success = await notifier.send_notification(
+            title="Test Notification",
+            message="This is a test notification from Job Search Crawler. If you received this, your notification settings are working correctly!",
+            priority="default"
+        )
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Test notification sent via {settings.NOTIFICATION_METHOD}"
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Failed to send test notification via {settings.NOTIFICATION_METHOD}. Check your configuration."
+            }
+    except Exception as e:
+        logger.error(f"Error testing notification: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error testing notification: {str(e)}")
 

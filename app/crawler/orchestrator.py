@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from app.crawler.lever_crawler import LeverCrawler
 from app.crawler.generic_crawler import GenericCrawler
 from app.crawler.indeed_crawler import IndeedCrawler
 from app.crawler.linkedin_crawler import LinkedInCrawler
+from app.crawler.fallback_manager import CrawlFallbackManager
 from app.config import Settings
 from app.ai.analyzer import JobAnalyzer
 from app.ai.job_filter import JobFilter
@@ -23,10 +24,12 @@ logger = logging.getLogger(__name__)
 class CrawlerOrchestrator:
     """Orchestrates crawling across company career pages"""
     
-    def __init__(self):
+    def __init__(self, bot_agent=None):
         self.analyzer = JobAnalyzer()
         self.job_filter = JobFilter()  # AI-powered job filter
-        self.notifier = NotificationService()
+        self.notifier = NotificationService(bot_agent=bot_agent)
+        # Initialize fallback manager with primary crawler method
+        self.fallback_manager = CrawlFallbackManager(self._crawl_company_primary)
         # Ensure only one crawl runs at a time
         self._crawl_lock: asyncio.Lock = asyncio.Lock()
         # Cooperative cancellation flag checked between companies
@@ -92,8 +95,9 @@ class CrawlerOrchestrator:
                     await db.commit()
 
                     try:
-                        jobs = await self._crawl_company(company)
-                        logger.info(f"Found {len(jobs)} jobs from {company.name}")
+                        # Use fallback manager for crawling
+                        jobs, method_used = await self.fallback_manager.crawl_with_fallback(company)
+                        logger.info(f"Found {len(jobs)} jobs from {company.name} (method: {method_used})")
 
                         new_jobs = await self._process_company_jobs(
                             db,
@@ -110,8 +114,20 @@ class CrawlerOrchestrator:
                         log.jobs_found = len(jobs)
                         log.new_jobs = len(new_jobs)
 
+                        # Update company stats
                         company.last_crawled_at = datetime.utcnow()
-                        company.jobs_found_total += len(new_jobs)
+                        if len(new_jobs) > 0:
+                            # Successful crawl - reset consecutive empty crawls
+                            company.consecutive_empty_crawls = 0
+                            company.last_successful_crawl = datetime.utcnow()
+                            company.jobs_found_total += len(new_jobs)
+                        else:
+                            # Empty crawl - increment counter
+                            company.consecutive_empty_crawls += 1
+                        
+                        # Track successful fallback method
+                        if method_used != "career_page" and method_used != "no_results":
+                            await self._record_fallback_success(db, company, method_used)
 
                         # Track duration for ETA calculation
                         company_duration = (datetime.utcnow() - company_start).total_seconds()
@@ -277,6 +293,25 @@ class CrawlerOrchestrator:
         await db.commit()
         logger.info(f"Saved {len(new_jobs)} new jobs")
         
+        # Generate tasks for new jobs (if auto-generation is enabled)
+        if new_jobs:
+            try:
+                from app.ai.task_generator import TaskGenerator
+                from app.config import settings
+                
+                if settings.AUTO_GENERATE_TASKS:
+                    for job in new_jobs:
+                        try:
+                            # Refresh job to ensure we have all fields
+                            await db.refresh(job)
+                            tasks = await TaskGenerator.generate_tasks_for_job(db, job)
+                            if tasks:
+                                logger.debug(f"Generated {len(tasks)} tasks for job {job.id}")
+                        except Exception as e:
+                            logger.error(f"Error generating tasks for job {job.id}: {e}")
+            except Exception as e:
+                logger.error(f"Error in task generation: {e}")
+        
         # Send notifications if there are new jobs and search has notifications enabled
         if new_jobs and search.notify_on_new:
             try:
@@ -330,9 +365,9 @@ class CrawlerOrchestrator:
             await db.commit()
 
             try:
-                # Crawl company career page - get ALL jobs from the company
-                jobs = await self._crawl_company(company)
-                logger.info(f"Found {len(jobs)} jobs from {company.name}")
+                # Crawl company with fallback strategies
+                jobs, method_used = await self.fallback_manager.crawl_with_fallback(company)
+                logger.info(f"Found {len(jobs)} jobs from {company.name} (method: {method_used})")
 
                 # Filter jobs by search criteria (basic keyword/location filtering)
                 filtered_jobs = self._filter_jobs_by_criteria(jobs, search)
@@ -355,7 +390,18 @@ class CrawlerOrchestrator:
 
                 # Update company stats
                 company.last_crawled_at = datetime.utcnow()
-                company.jobs_found_total += len(new_jobs)
+                if len(new_jobs) > 0:
+                    # Successful crawl - reset consecutive empty crawls
+                    company.consecutive_empty_crawls = 0
+                    company.last_successful_crawl = datetime.utcnow()
+                    company.jobs_found_total += len(new_jobs)
+                else:
+                    # Empty crawl - increment counter
+                    company.consecutive_empty_crawls += 1
+                
+                # Track successful fallback method
+                if method_used != "career_page" and method_used != "no_results":
+                    await self._record_fallback_success(db, company, method_used)
 
                 results.extend([{
                     'id': job.id,
@@ -394,8 +440,8 @@ class CrawlerOrchestrator:
 
         return results
 
-    async def _crawl_company(self, company: Company) -> List[Dict]:
-        """Crawl a specific company's career page"""
+    async def _crawl_company_primary(self, company: Company) -> List[Dict]:
+        """Primary crawler method - crawls a specific company's career page"""
         crawler_type = company.crawler_type
         config = company.crawler_config or {}
 
@@ -474,6 +520,52 @@ class CrawlerOrchestrator:
         except Exception as e:
             logger.error(f"Error in company crawler: {e}", exc_info=True)
             raise
+    
+    async def _crawl_company(self, company: Company) -> Tuple[List[Dict], str]:
+        """Crawl company using fallback manager"""
+        return await self.fallback_manager.crawl_with_fallback(company)
+    
+    async def _record_fallback_success(
+        self,
+        db: AsyncSession,
+        company: Company,
+        method_used: str
+    ):
+        """Record successful fallback method for future optimization"""
+        from app.models import CrawlFallback
+        
+        try:
+            # Check if fallback record exists for this company and method
+            from sqlalchemy import select, and_
+            result = await db.execute(
+                select(CrawlFallback).where(
+                    and_(
+                        CrawlFallback.company_id == company.id,
+                        CrawlFallback.method_used == method_used
+                    )
+                )
+            )
+            fallback_record = result.scalar_one_or_none()
+            
+            if fallback_record:
+                # Update existing record
+                fallback_record.success_count += 1
+                fallback_record.last_success_at = datetime.utcnow()
+                fallback_record.updated_at = datetime.utcnow()
+            else:
+                # Create new record
+                fallback_record = CrawlFallback(
+                    company_id=company.id,
+                    method_used=method_used,
+                    success_count=1,
+                    last_success_at=datetime.utcnow()
+                )
+                db.add(fallback_record)
+            
+            await db.flush()
+        except Exception as e:
+            logger.error(f"Error recording fallback success: {e}", exc_info=True)
+            # Don't fail the crawl if fallback tracking fails
 
     def _filter_jobs_by_criteria(self, jobs: List[Dict], search: SearchCriteria) -> List[Dict]:
         """Filter jobs based on search criteria"""
@@ -612,6 +704,25 @@ class CrawlerOrchestrator:
             logger.info(f"Saved {len(new_jobs)} new jobs from {company.name}")
         else:
             logger.info(f"No new jobs to save for {company.name} (all {len(jobs)} jobs already exist or invalid)")
+
+        # Generate tasks for new jobs (if auto-generation is enabled)
+        if new_jobs:
+            try:
+                from app.ai.task_generator import TaskGenerator
+                from app.config import settings
+                
+                if settings.AUTO_GENERATE_TASKS:
+                    for job in new_jobs:
+                        try:
+                            # Refresh job to ensure we have all fields
+                            await db.refresh(job)
+                            tasks = await TaskGenerator.generate_tasks_for_job(db, job)
+                            if tasks:
+                                logger.debug(f"Generated {len(tasks)} tasks for job {job.id}")
+                        except Exception as e:
+                            logger.error(f"Error generating tasks for job {job.id}: {e}")
+            except Exception as e:
+                logger.error(f"Error in task generation: {e}")
 
         # Send notifications (only if search criteria exists and notifications enabled)
         if new_jobs and search and search.notify_on_new:

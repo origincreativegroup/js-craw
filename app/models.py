@@ -33,9 +33,18 @@ class Company(Base):
     jobs_found_total = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Company lifecycle management fields
+    consecutive_empty_crawls = Column(Integer, default=0, index=True)  # Track failed crawl streak
+    viability_score = Column(Float, nullable=True, index=True)  # AI-assessed health score (0-100)
+    viability_last_checked = Column(DateTime, nullable=True)  # Last AI analysis timestamp
+    discovery_source = Column(String(50), nullable=True)  # How company was found (linkedin/indeed/web_search/manual)
+    last_successful_crawl = Column(DateTime, nullable=True, index=True)  # Last time jobs were found
+    priority_score = Column(Float, default=0.0, index=True)  # Crawl priority ranking
 
     # Relationships
     jobs = relationship("Job", back_populates="company_relation")
+    crawl_fallbacks = relationship("CrawlFallback", back_populates="company")
 
 
 class SearchCriteria(Base):
@@ -105,6 +114,7 @@ class Job(Base):
     company_relation = relationship("Company", back_populates="jobs")  # Renamed to avoid conflict with company column
     follow_ups = relationship("FollowUp", back_populates="job")
     generated_documents = relationship("GeneratedDocument", back_populates="job")
+    tasks = relationship("Task", back_populates="job")
 
 
 class FollowUp(Base):
@@ -173,4 +183,52 @@ class GeneratedDocument(Base):
     
     # Relationships
     job = relationship("Job", back_populates="generated_documents")
+
+
+class CrawlFallback(Base):
+    """Track which fallback methods succeeded for each company"""
+    __tablename__ = "crawl_fallbacks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    method_used = Column(String(50), nullable=False)  # career_page, linkedin_fallback, indeed_fallback, ai_web_search
+    success_count = Column(Integer, default=0)  # How many times this method succeeded
+    last_success_at = Column(DateTime, nullable=True)  # Last time this method worked
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("Company", back_populates="crawl_fallbacks")
+
+
+class Task(Base):
+    """Task workspace for job-related actions"""
+    __tablename__ = "tasks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    
+    # Task classification
+    task_type = Column(String(50), nullable=False, index=True)  # apply, follow_up, research, network, prepare_interview
+    priority = Column(String(20), nullable=False, default="medium", index=True)  # high, medium, low
+    status = Column(String(20), nullable=False, default="pending", index=True)  # pending, in_progress, completed, snoozed, cancelled
+    
+    # Scheduling
+    due_date = Column(DateTime, nullable=False, index=True)
+    snooze_until = Column(DateTime, nullable=True, index=True)
+    snooze_count = Column(Integer, default=0)  # Track how many times task was snoozed
+    
+    # Task details
+    title = Column(String(500), nullable=False)  # Task title/description
+    notes = Column(Text, nullable=True)  # Additional notes or context
+    
+    # Metadata
+    recommended_by = Column(String(50), nullable=True)  # AI, system, user
+    ai_insights = Column(JSON, nullable=True)  # Store AI insights that led to task creation
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    job = relationship("Job", back_populates="tasks")
 

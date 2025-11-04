@@ -47,10 +47,25 @@ class Settings(BaseSettings):
     # Telegram settings
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_CHAT_ID: Optional[str] = None
+    TELEGRAM_BOT_MODE: str = "polling"  # "polling" or "webhook"
+    TELEGRAM_WEBHOOK_URL: Optional[str] = None  # Full URL for webhook mode
     
     # OpenWebUI settings (point to your existing OpenWebUI instance)
     OPENWEBUI_ENABLED: bool = True
     OPENWEBUI_URL: str = "http://localhost:3000"  # Update to match your OpenWebUI URL
+    
+    # Company lifecycle management settings
+    COMPANY_TARGET_COUNT: int = 1500  # Target number of companies to maintain
+    COMPANY_DISCOVERY_BATCH_SIZE: int = 50  # Number of companies to discover per batch
+    CONSECUTIVE_EMPTY_THRESHOLD: int = 3  # Remove companies after N consecutive empty crawls
+    VIABILITY_SCORE_THRESHOLD: float = 30.0  # Minimum viability score to keep company (0-100)
+    COMPANY_REFRESH_SCHEDULE: str = "daily"  # How often to refresh company list
+    WEB_SEARCH_ENABLED: bool = True  # Enable AI web search for company discovery
+    
+    # Task workspace settings
+    AUTO_GENERATE_TASKS: bool = True  # Enable/disable automatic task generation from AI insights
+    TASK_MATCH_SCORE_THRESHOLD: float = 50.0  # Minimum match score for auto-generating tasks
+    TASK_REMINDER_CHECK_INTERVAL_MINUTES: int = 60  # How often to check for due tasks (in minutes)
     
     class Config:
         env_file = ".env"
