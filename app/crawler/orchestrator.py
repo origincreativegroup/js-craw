@@ -10,6 +10,8 @@ from app.models import SearchCriteria, Job, CrawlLog, User, Company
 from app.crawler.greenhouse_crawler import GreenhouseCrawler
 from app.crawler.lever_crawler import LeverCrawler
 from app.crawler.generic_crawler import GenericCrawler
+from app.crawler.indeed_crawler import IndeedCrawler
+from app.crawler.linkedin_crawler import LinkedInCrawler
 from app.config import Settings
 from app.ai.analyzer import JobAnalyzer
 from app.ai.job_filter import JobFilter
@@ -417,6 +419,43 @@ class CrawlerOrchestrator:
             elif crawler_type == 'lever':
                 slug = config.get('slug', company.name.lower())
                 crawler = LeverCrawler(slug, company.name)
+                jobs = await crawler.fetch_jobs()
+                crawler.close()
+                return jobs
+
+            elif crawler_type == 'indeed':
+                query = config.get('query') or company.name
+                if not query:
+                    logger.warning(f"Indeed crawler for {company.name} missing query configuration")
+                    return []
+
+                crawler = IndeedCrawler(
+                    query=query,
+                    location=config.get('location'),
+                    max_pages=config.get('max_pages', 2),
+                    results_per_page=config.get('results_per_page', 20),
+                    freshness_days=config.get('freshness_days'),
+                    remote_only=config.get('remote_only', False),
+                    company_name=company.name,
+                )
+                jobs = await crawler.fetch_jobs()
+                crawler.close()
+                return jobs
+
+            elif crawler_type == 'linkedin':
+                query = config.get('query') or company.name
+                if not query:
+                    logger.warning(f"LinkedIn crawler for {company.name} missing query configuration")
+                    return []
+
+                crawler = LinkedInCrawler(
+                    query=query,
+                    location=config.get('location'),
+                    max_pages=config.get('max_pages', 2),
+                    remote_only=config.get('remote_only', False),
+                    filters=config.get('filters'),
+                    company_name=company.name,
+                )
                 jobs = await crawler.fetch_jobs()
                 crawler.close()
                 return jobs

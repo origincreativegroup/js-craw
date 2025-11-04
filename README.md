@@ -4,7 +4,8 @@ A comprehensive, production-ready job search automation system that crawls compa
 
 ## 🎯 Features
 
-- **Automated Crawling**: Company career pages every 30 minutes (configurable)
+- **Automated Crawling**: Company career pages and curated job board searches
+  every 30 minutes (configurable)
 - **AI Analysis**: Local LLM (Ollama) for intelligent job matching
 - **Mobile Notifications**: Push alerts via ntfy, Pushover, or Telegram
 - **Web Dashboard**: Clean, responsive UI for managing everything
@@ -25,6 +26,8 @@ js-craw/
 │   │   ├── __init__.py
 │   │   ├── greenhouse_crawler.py  # Greenhouse ATS crawler
 │   │   ├── lever_crawler.py       # Lever ATS crawler
+│   │   ├── indeed_crawler.py      # Indeed guest search crawler
+│   │   ├── linkedin_crawler.py    # LinkedIn guest search crawler
 │   │   ├── generic_crawler.py     # AI-assisted generic career page crawler
 │   │   └── orchestrator.py        # Coordinates crawlers
 │   ├── ai/                        # AI analysis
@@ -136,6 +139,39 @@ Key settings in `.env`:
 - `OLLAMA_MODEL`: AI model to use (default: `llama2`)
 
 See `.env.example` for all options.
+
+### Crawler Types
+
+Use the **Companies** admin view (or seed script) to add different crawler
+profiles:
+
+- `greenhouse` / `lever` – require a `slug` in `crawler_config`.
+- `generic` – points directly to a custom career page URL.
+- `indeed` – expects a JSON config like:
+  ```json
+  {
+    "query": "machine learning engineer",
+    "location": "Remote",
+    "max_pages": 2,
+    "freshness_days": 7,
+    "remote_only": true
+  }
+  ```
+- `linkedin` – uses the guest API with a config such as:
+  ```json
+  {
+    "query": "software engineer",
+    "location": "United States",
+    "max_pages": 3,
+    "remote_only": false,
+    "filters": {"f_E": "2,3"}
+  }
+  ```
+  The `filters` object lets you pass LinkedIn query parameters (e.g. `{ "f_E": "2,3" }` for mid and senior roles).
+
+The orchestrator merges the jobs found by each crawler into the shared
+database so downstream AI analysis and notifications work identically across
+sources.
 
 ### Notification Setup
 
