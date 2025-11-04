@@ -1,10 +1,11 @@
 """Seed database with companies from companies.csv"""
 import asyncio
 import csv
+import re
 import sys
 from pathlib import Path
-from typing import Optional
-from urllib.parse import urlparse
+from typing import Dict, Optional
+from urllib.parse import parse_qs, urlparse
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,9 +30,67 @@ def detect_crawler_type(url: str) -> str:
     # Workday patterns
     if 'myworkdayjobs.com' in url_lower or 'workday.com' in url_lower:
         return "workday"
-    
+
     # Default to generic
     return "generic"
+
+
+def _slugify_company_name(company_name: str) -> str:
+    """Create a slug from a company name for crawler defaults."""
+
+    base_name = company_name.split('(')[0].strip()
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", base_name).strip('-').lower()
+    return slug
+
+
+def _extract_greenhouse_slug(url: str, company_name: str) -> Optional[str]:
+    """Extract the Greenhouse slug from a career page URL."""
+
+    parsed = urlparse(url)
+
+    query_params = parse_qs(parsed.query)
+    slug_candidates = query_params.get('for') or query_params.get('for[]')
+    if slug_candidates:
+        for candidate in slug_candidates:
+            candidate = candidate.strip()
+            if candidate:
+                return candidate.lower()
+
+    path_parts = [part for part in parsed.path.split('/') if part]
+    for part in reversed(path_parts):
+        lowered = part.lower()
+        if lowered in {"embed", "job_board", "jobs"}:
+            continue
+        return lowered
+
+    return _slugify_company_name(company_name)
+
+
+def _extract_lever_slug(url: str, company_name: str) -> str:
+    """Extract the Lever slug from a career page URL."""
+
+    parsed = urlparse(url)
+    path_parts = [part for part in parsed.path.split('/') if part]
+    if path_parts:
+        return path_parts[0].lower()
+    return _slugify_company_name(company_name)
+
+
+def build_crawler_config(company_name: str, url: str, crawler_type: str) -> Dict:
+    """Build crawler configuration details based on detected type."""
+
+    if crawler_type == "greenhouse":
+        slug = _extract_greenhouse_slug(url, company_name)
+        return {"slug": slug} if slug else {}
+
+    if crawler_type == "lever":
+        slug = _extract_lever_slug(url, company_name)
+        return {"slug": slug} if slug else {}
+
+    if crawler_type == "workday":
+        return {"source": "workday"}
+
+    return {}
 
 
 # Known company career page URLs (for companies where URL construction might fail)
@@ -117,12 +176,13 @@ def parse_companies_csv(csv_path: Path) -> list:
                 continue
             
             crawler_type = detect_crawler_type(career_url)
-            
+            crawler_config = build_crawler_config(company_name, career_url, crawler_type)
+
             companies.append({
                 "name": company_name,
                 "career_page_url": career_url,
                 "crawler_type": crawler_type,
-                "crawler_config": {}
+                "crawler_config": crawler_config
             })
     
     if skipped_no_url:
