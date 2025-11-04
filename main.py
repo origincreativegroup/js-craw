@@ -39,16 +39,16 @@ async def lifespan(app: FastAPI):
     app.state.crawler = orchestrator
     logger.info("Crawler orchestrator initialized")
     
-    # Start scheduler
+    # Start scheduler - Phase 2: Crawl all companies (simplified approach)
     scheduler.add_job(
-        orchestrator.run_all_searches,
+        orchestrator.crawl_all_companies,
         trigger=IntervalTrigger(minutes=settings.CRAWL_INTERVAL_MINUTES),
-        id="crawl_jobs",
-        name="Crawl job platforms",
+        id="crawl_all_companies",
+        name="Crawl all active companies",
         replace_existing=True
     )
     scheduler.start()
-    logger.info(f"Scheduler started (interval: {settings.CRAWL_INTERVAL_MINUTES} minutes)")
+    logger.info(f"Scheduler started: crawling all companies every {settings.CRAWL_INTERVAL_MINUTES} minutes")
     
     yield
     

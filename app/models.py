@@ -69,7 +69,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id = Column(Integer, primary_key=True, index=True)
-    search_criteria_id = Column(Integer, ForeignKey("search_criteria.id"), nullable=False, index=True)
+    search_criteria_id = Column(Integer, ForeignKey("search_criteria.id"), nullable=True, index=True)  # Now nullable for direct company crawls
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # New: for company-based crawls
     platform = Column(String(50), nullable=True, index=True)  # Legacy: linkedin/indeed
     external_id = Column(String(255), nullable=False, index=True)  # Platform-specific ID
@@ -88,6 +88,9 @@ class Job(Base):
     ai_pros = Column(JSON, nullable=True)  # List of pros
     ai_cons = Column(JSON, nullable=True)  # List of cons
     ai_keywords_matched = Column(JSON, nullable=True)  # List of matched keywords
+    ai_rank = Column(Integer, nullable=True, index=True)  # Daily ranking (1-5 for top 5)
+    ai_recommended = Column(Boolean, default=False, index=True)  # AI recommended flag
+    ai_selected_date = Column(DateTime, nullable=True, index=True)  # Date selected as top job
 
     # User tracking
     status = Column(String(50), default="new", index=True)  # new, viewed, applied, rejected, saved
@@ -101,6 +104,7 @@ class Job(Base):
     search_criteria = relationship("SearchCriteria", back_populates="jobs")
     company = relationship("Company", back_populates="jobs")
     follow_ups = relationship("FollowUp", back_populates="job")
+    generated_documents = relationship("GeneratedDocument", back_populates="job")
 
 
 class FollowUp(Base):
@@ -124,7 +128,8 @@ class CrawlLog(Base):
     __tablename__ = "crawl_logs"
     
     id = Column(Integer, primary_key=True, index=True)
-    search_criteria_id = Column(Integer, ForeignKey("search_criteria.id"), nullable=False, index=True)
+    search_criteria_id = Column(Integer, ForeignKey("search_criteria.id"), nullable=True, index=True)  # Now nullable
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # New: for company-based crawls
     platform = Column(String(50), nullable=False)
     started_at = Column(DateTime, nullable=False, index=True)
     completed_at = Column(DateTime, nullable=True)
@@ -135,4 +140,37 @@ class CrawlLog(Base):
     
     # Relationships
     search_criteria = relationship("SearchCriteria", back_populates="crawl_logs")
+
+
+class UserProfile(Base):
+    """User profile with preferences and resume data"""
+    __tablename__ = "user_profiles"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, unique=True, index=True)  # Optional: link to user if needed
+    base_resume = Column(Text, nullable=True)  # User's base resume content
+    skills = Column(JSON, nullable=True)  # List of skills
+    experience = Column(JSON, nullable=True)  # List of work experience
+    education = Column(JSON, nullable=True)  # Education background
+    preferences = Column(JSON, nullable=True)  # Default search preferences (keywords, location, etc.)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User")
+
+
+class GeneratedDocument(Base):
+    """Generated resume or cover letter for a job"""
+    __tablename__ = "generated_documents"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    document_type = Column(String(20), nullable=False, index=True)  # "resume" or "cover_letter"
+    content = Column(Text, nullable=False)  # Generated document content
+    generated_at = Column(DateTime, default=datetime.utcnow, index=True)
+    file_path = Column(String(500), nullable=True)  # Optional: path to saved file
+    
+    # Relationships
+    job = relationship("Job", back_populates="generated_documents")
 

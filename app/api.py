@@ -704,3 +704,27 @@ async def get_stats(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading statistics: {str(e)}")
 
+
+# OpenWebUI integration
+@router.get("/openwebui")
+async def get_openwebui_info(
+    request: Request
+):
+    """Get OpenWebUI access information"""
+    from app.config import settings
+    
+    return {
+        "enabled": settings.OPENWEBUI_ENABLED,
+        "url": settings.OPENWEBUI_URL,
+        "ollama_host": settings.OLLAMA_HOST,
+        "ollama_model": settings.OLLAMA_MODEL,
+        "description": "OpenWebUI provides a chat interface for interacting with Ollama models",
+        "features": [
+            "Chat with AI about your job searches",
+            "Get job search advice",
+            "Ask questions about companies",
+            "Generate cover letters and resumes",
+            "Analyze job descriptions"
+        ]
+    }
+

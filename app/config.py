@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     
     # Scheduling
     CRAWL_INTERVAL_MINUTES: int = 30
+    DAILY_TOP_JOBS_COUNT: int = 5
+    DAILY_GENERATION_TIME: str = "15:00"  # 3 PM in HH:MM format
+    
+    # Document Generation
+    RESUME_STORAGE_PATH: str = "/app/data/resumes"
+    COVER_LETTER_STORAGE_PATH: str = "/app/data/cover_letters"
     
     # Notifications
     NOTIFICATION_METHOD: str = "ntfy"  # ntfy, pushover, telegram
@@ -41,6 +47,10 @@ class Settings(BaseSettings):
     # Telegram settings
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_CHAT_ID: Optional[str] = None
+    
+    # OpenWebUI settings (point to your existing OpenWebUI instance)
+    OPENWEBUI_ENABLED: bool = True
+    OPENWEBUI_URL: str = "http://localhost:3000"  # Update to match your OpenWebUI URL
     
     class Config:
         env_file = ".env"
