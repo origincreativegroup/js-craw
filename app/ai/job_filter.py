@@ -20,121 +20,108 @@ class JobFilter:
     def __init__(self):
         self.ollama_url = f"{settings.OLLAMA_HOST}/api/generate"
         self.model = settings.OLLAMA_MODEL
-        self._user_profile_cache = None
     
-    async def filter_job(self, job_data: Dict, user_profile: Optional[Dict] = None) -> Dict:
+    async def filter_and_rank_jobs(self, limit: Optional[int] = None) -> List[Job]:
         """
-        Filter and analyze a single job posting in real-time.
-        This is used during crawling to filter jobs before saving them.
+        Analyze all jobs in database and rank them based on user preferences.
+        Uses Ollama to intelligently match jobs to user profile.
         
         Args:
-            job_data: Job dictionary with title, company, location, description, etc.
-            user_profile: Optional user profile (will fetch if not provided)
+            limit: Maximum number of jobs to return (default: all)
             
         Returns:
-            Dict with:
-            - should_keep: bool - Whether to keep this job
-            - match_score: float - AI match score (0-100)
-            - recommended: bool - Whether job is recommended
-            - summary: str - Brief summary
-            - pros: List[str] - Positive aspects
-            - cons: List[str] - Negative aspects
-            - keywords_matched: List[str] - Matched keywords
+            List of jobs sorted by AI match score
         """
-        try:
-            # Get user profile if not provided
-            if user_profile is None:
-                user_profile = await self._get_user_profile_cached()
+        async with AsyncSessionLocal() as db:
+            # Get user profile/preferences
+            user_profile = await self._get_user_profile(db)
             
-            # Use Ollama to analyze job match
-            match_data = await self._analyze_job_match_dict(job_data, user_profile)
+            # Get all jobs that haven't been analyzed yet or need re-ranking
+            # Focus on new jobs or jobs without ai_recommended flag
+            result = await db.execute(
+                select(Job)
+                .where(Job.description.isnot(None))
+                .order_by(Job.discovered_at.desc())
+                .limit(limit or 1000)  # Limit for performance
+            )
+            jobs = result.scalars().all()
             
-            if not match_data:
-                # Default: keep job but with neutral score
-                return {
-                    'should_keep': True,
-                    'match_score': 50.0,
-                    'recommended': False,
-                    'summary': '',
-                    'pros': [],
-                    'cons': [],
-                    'keywords_matched': []
-                }
+            logger.info(f"Analyzing {len(jobs)} jobs with AI...")
             
-            # Decide if job should be kept (keep all for now, but mark with score)
-            # In future, could filter out low-scoring jobs: match_data.get('match_score', 50) >= 30
-            should_keep = True
-            
-            return {
-                'should_keep': should_keep,
-                'match_score': match_data.get('match_score', 50.0),
-                'recommended': match_data.get('recommended', False),
-                'summary': match_data.get('summary', ''),
-                'pros': match_data.get('pros', []),
-                'cons': match_data.get('cons', []),
-                'keywords_matched': match_data.get('keywords_matched', []),
-                'reasoning': match_data.get('reasoning', '')
-            }
-            
-        except Exception as e:
-            logger.error(f"Error filtering job {job_data.get('title', 'unknown')}: {e}", exc_info=True)
-            # On error, keep the job but with neutral score
-            return {
-                'should_keep': True,
-                'match_score': 50.0,
-                'recommended': False,
-                'summary': '',
-                'pros': [],
-                'cons': [],
-                'keywords_matched': []
-            }
-    
-    async def filter_jobs_batch(self, jobs: List[Dict], user_profile: Optional[Dict] = None) -> List[Dict]:
-        """
-        Filter multiple jobs in batch (more efficient than one-by-one).
-        Returns filtered list with only jobs that should be kept.
-        
-        Args:
-            jobs: List of job dictionaries
-            user_profile: Optional user profile (will fetch if not provided)
-            
-        Returns:
-            List of jobs with AI analysis data added
-        """
-        if not jobs:
-            return []
-        
-        # Get user profile if not provided
-        if user_profile is None:
-            user_profile = await self._get_user_profile_cached()
-        
-        filtered_results = []
-        
-        for job_data in jobs:
-            try:
-                filter_result = await self.filter_job(job_data, user_profile)
-                
-                # Add AI analysis to job data
-                job_data['ai_match_score'] = filter_result['match_score']
-                job_data['ai_recommended'] = filter_result['recommended']
-                job_data['ai_summary'] = filter_result['summary']
-                job_data['ai_pros'] = filter_result['pros']
-                job_data['ai_cons'] = filter_result['cons']
-                job_data['ai_keywords_matched'] = filter_result['keywords_matched']
-                
-                # Only keep jobs that pass filter
-                if filter_result['should_keep']:
-                    filtered_results.append(job_data)
+            ranked_jobs = []
+            for job in jobs:
+                try:
+                    # Use Ollama to analyze job match
+                    match_data = await self._analyze_job_match(job, user_profile)
                     
-            except Exception as e:
-                logger.error(f"Error filtering job in batch: {e}")
-                # On error, keep job but with neutral score
-                job_data['ai_match_score'] = 50.0
-                job_data['ai_recommended'] = False
-                filtered_results.append(job_data)
+                    # Update job with AI analysis
+                    if match_data:
+                        job.ai_match_score = match_data.get('match_score', 50)
+                        job.ai_recommended = match_data.get('recommended', False)
+                        job.ai_summary = match_data.get('summary', job.ai_summary)
+                        job.ai_pros = match_data.get('pros', job.ai_pros)
+                        job.ai_cons = match_data.get('cons', job.ai_cons)
+                        job.ai_keywords_matched = match_data.get('keywords_matched', job.ai_keywords_matched)
+                    
+                    ranked_jobs.append(job)
+                    
+                except Exception as e:
+                    logger.error(f"Error analyzing job {job.id}: {e}", exc_info=True)
+                    # Keep job with default score
+                    ranked_jobs.append(job)
+            
+            await db.commit()
+            
+            # Sort by match score (highest first)
+            ranked_jobs.sort(key=lambda j: j.ai_match_score or 0, reverse=True)
+            
+            logger.info(f"Ranked {len(ranked_jobs)} jobs. Top score: {ranked_jobs[0].ai_match_score if ranked_jobs else 'N/A'}")
+            
+            return ranked_jobs
+    
+    async def select_top_jobs(self, count: int = 5) -> List[Job]:
+        """
+        Select the top N jobs for the day based on AI ranking.
+        Marks them with ai_rank and ai_selected_date.
         
-        logger.info(f"Filtered {len(jobs)} jobs down to {len(filtered_results)} matches")
-        return filtered_results
+        Args:
+            count: Number of top jobs to select
+            
+        Returns:
+            List of top ranked jobs
+        """
+        async with AsyncSessionLocal() as db:
+            # Get jobs from today that are recommended or have high scores
+            today = datetime.utcnow().date()
+            result = await db.execute(
+                select(Job)
+                .where(
+                    Job.discovered_at >= datetime.combine(today, datetime.min.time()),
+                    Job.ai_match_score.isnot(None)
+                )
+                .order_by(Job.ai_match_score.desc(), Job.discovered_at.desc())
+                .limit(count * 3)  # Get more candidates for final selection
+            )
+            candidate_jobs = result.scalars().all()
+            
+            if not candidate_jobs:
+                logger.info("No jobs found for today to rank")
+                return []
+            
+            # Use Ollama to make final intelligent selection from candidates
+            top_jobs = await self._intelligent_selection(candidate_jobs[:count * 3], count)
+            
+            # Update rankings
+            today_datetime = datetime.utcnow()
+            for i, job in enumerate(top_jobs, 1):
+                job.ai_rank = i
+                job.ai_selected_date = today_datetime
+                job.ai_recommended = True
+            
+            await db.commit()
+            
+            logger.info(f"Selected top {len(top_jobs)} jobs for today")
+            return top_jobs
     
     async def _get_user_profile(self, db: AsyncSession) -> Optional[Dict]:
         """Get user profile with preferences"""
@@ -179,24 +166,6 @@ class JobFilter:
             logger.error(f"Error in AI job matching: {e}")
             return None
     
-    async def _analyze_job_match_dict(self, job_data: Dict, user_profile: Dict) -> Optional[Dict]:
-        """
-        Use Ollama to intelligently analyze how well a job (from dict) matches user preferences
-        """
-        preferences = user_profile.get('preferences', {})
-        skills = user_profile.get('skills', [])
-        
-        # Build intelligent prompt
-        prompt = self._build_match_prompt_dict(job_data, preferences, skills)
-        
-        try:
-            response_text = await self._call_ollama(prompt)
-            match_data = self._parse_match_response(response_text)
-            return match_data
-        except Exception as e:
-            logger.error(f"Error in AI job matching: {e}")
-            return None
-    
     def _build_match_prompt(self, job: Job, preferences: Dict, skills: List) -> str:
         """Build intelligent prompt for Ollama to analyze job match"""
         
@@ -213,51 +182,6 @@ Title: {job.title}
 Company: {job.company}
 Location: {job.location or 'Not specified'}
 Job Type: {job.job_type or 'Not specified'}
-Description: {job_desc}
-
-USER PREFERENCES:
-- Keywords/Interests: {user_prefs or 'Not specified'}
-- Remote Preferred: {remote_pref}
-- Experience Level: {exp_level or 'Any'}
-- User Skills: {', '.join(skills[:10]) if skills else 'Not specified'}
-
-Analyze this job and provide a JSON response with this exact format:
-{{
-    "match_score": 85,
-    "recommended": true,
-    "summary": "Brief 2-3 sentence summary of why this is a good match",
-    "pros": ["Why this job fits well - 3-5 reasons"],
-    "cons": ["Potential concerns - 2-3 reasons"],
-    "keywords_matched": ["Specific keywords from preferences that match"],
-    "reasoning": "Detailed explanation of the match score"
-}}
-
-Guidelines:
-- Match score: 0-100 (100 = perfect match)
-- Consider: job requirements, location (remote vs on-site), company, role level, skills needed
-- Be honest about cons - don't oversell
-- recommended: true if match_score >= 70
-
-Return ONLY valid JSON, no markdown formatting."""
-        
-        return prompt
-    
-    def _build_match_prompt_dict(self, job_data: Dict, preferences: Dict, skills: List) -> str:
-        """Build intelligent prompt for Ollama to analyze job match from dict"""
-        
-        job_desc = (job_data.get('description') or '')[:2000]  # Limit description length
-        
-        user_prefs = preferences.get('keywords', '')
-        remote_pref = preferences.get('remote_preferred', True)
-        exp_level = preferences.get('experience_level', '')
-        
-        prompt = f"""You are an intelligent job matching assistant. Analyze how well this job matches the user's preferences and provide a detailed assessment.
-
-JOB POSTING:
-Title: {job_data.get('title', 'Unknown')}
-Company: {job_data.get('company', 'Unknown')}
-Location: {job_data.get('location') or 'Not specified'}
-Job Type: {job_data.get('job_type') or 'Not specified'}
 Description: {job_desc}
 
 USER PREFERENCES:
@@ -417,14 +341,3 @@ Example: [2, 5, 8, 12, 15]"""
                 'cons': [],
                 'keywords_matched': []
             }
-    
-    async def _get_user_profile_cached(self) -> Dict:
-        """Get user profile with caching"""
-        if self._user_profile_cache is None:
-            async with AsyncSessionLocal() as db:
-                self._user_profile_cache = await self._get_user_profile(db)
-        return self._user_profile_cache
-    
-    def clear_profile_cache(self):
-        """Clear the cached user profile (call when profile is updated)"""
-        self._user_profile_cache = None
