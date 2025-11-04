@@ -10,6 +10,12 @@ jobs:
     runs-on: self-hosted
 
     steps:
+      - name: Check current directory
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "User: $(whoami)"
+          ls -la /home/admin/docker/js-craw
+
       - name: Pull latest code
         working-directory: /home/admin/docker/js-craw
         run: |
