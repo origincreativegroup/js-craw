@@ -35,7 +35,7 @@ class Company(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    jobs = relationship("Job", back_populates="company")
+    jobs = relationship("Job", back_populates="company_relation")
 
 
 class SearchCriteria(Base):
@@ -102,7 +102,7 @@ class Job(Base):
 
     # Relationships
     search_criteria = relationship("SearchCriteria", back_populates="jobs")
-    company = relationship("Company", back_populates="jobs")
+    company_relation = relationship("Company", back_populates="jobs")  # Renamed to avoid conflict with company column
     follow_ups = relationship("FollowUp", back_populates="job")
     generated_documents = relationship("GeneratedDocument", back_populates="job")
 

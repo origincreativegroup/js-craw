@@ -398,6 +398,15 @@ class CrawlerOrchestrator:
 
         for job_data in jobs:
             try:
+                # Validate required fields
+                if not job_data.get('external_id'):
+                    logger.warning(f"Job missing external_id, skipping: {job_data.get('title', 'Unknown')}")
+                    continue
+                
+                if not job_data.get('title'):
+                    logger.warning(f"Job missing title, skipping: {job_data.get('external_id', 'Unknown')}")
+                    continue
+                
                 # Check if job already exists (by external_id and company_id to handle duplicates across companies)
                 result = await db.execute(
                     select(Job).where(
@@ -430,14 +439,17 @@ class CrawlerOrchestrator:
                 )
 
                 # AI analysis - use existing data if available, otherwise run analysis
-                if skip_ai_analysis and 'ai_match_score' in job_data:
-                    # AI analysis already done during filtering
-                    job.ai_summary = job_data.get('ai_summary')
-                    job.ai_match_score = job_data.get('ai_match_score')
-                    job.ai_pros = job_data.get('ai_pros')
-                    job.ai_cons = job_data.get('ai_cons')
-                    job.ai_keywords_matched = job_data.get('ai_keywords_matched')
-                    job.ai_recommended = job_data.get('ai_recommended', False)
+                if skip_ai_analysis:
+                    # Skip AI analysis - will be done in batch later
+                    # Only use AI data if it's already in job_data (from previous filtering)
+                    if 'ai_match_score' in job_data:
+                        job.ai_summary = job_data.get('ai_summary')
+                        job.ai_match_score = job_data.get('ai_match_score')
+                        job.ai_pros = job_data.get('ai_pros')
+                        job.ai_cons = job_data.get('ai_cons')
+                        job.ai_keywords_matched = job_data.get('ai_keywords_matched')
+                        job.ai_recommended = job_data.get('ai_recommended', False)
+                    # Otherwise, leave AI fields as None - they'll be populated in batch processing
                 elif search:
                     # Legacy: use analyzer for search-based crawls
                     try:
@@ -464,12 +476,16 @@ class CrawlerOrchestrator:
 
                 db.add(job)
                 new_jobs.append(job)
+                logger.debug(f"Added job to save queue: {job.title} (external_id: {job.external_id})")
 
             except Exception as e:
-                logger.error(f"Error processing job: {e}", exc_info=True)
+                logger.error(f"Error processing job {job_data.get('title', 'Unknown')} ({job_data.get('external_id', 'Unknown')}): {e}", exc_info=True)
 
-        await db.commit()
-        logger.info(f"Saved {len(new_jobs)} new jobs from {company.name}")
+        if new_jobs:
+            await db.commit()
+            logger.info(f"Saved {len(new_jobs)} new jobs from {company.name}")
+        else:
+            logger.info(f"No new jobs to save for {company.name} (all {len(jobs)} jobs already exist or invalid)")
 
         # Send notifications (only if search criteria exists and notifications enabled)
         if new_jobs and search and search.notify_on_new:
