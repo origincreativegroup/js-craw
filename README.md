@@ -14,14 +14,20 @@ A comprehensive, production-ready job search automation system that crawls compa
 - **Secure Storage**: Encrypted credentials, PostgreSQL database
 - **Docker-Based**: One-command deployment
 
-### 🆕 New AI Enhancements
+### 🆕 New Features
 
+- **Automation Command Center**: Real-time monitoring and control dashboard
+  - Real-time telemetry (status, progress, ETA, queue length)
+  - Timeline visualization of automation events
+  - Per-automation health chips with color-coded indicators
+  - Drill-down panels for crawler type analysis
+  - Full automation control (pause/resume, adjust interval, cancel)
 - **Document Generator**: Automatically generate tailored resumes and cover letters using AI
 - **Ollama Verifier**: Verify and test Ollama connection and functionality
 - **Comprehensive Testing**: Full test suite for AI features
 - **Batch Processing**: Generate documents for multiple top-matched jobs
 
-See [AI Enhancements Summary](docs/AI_ENHANCEMENTS_SUMMARY.md) and [Ollama Verification Guide](docs/OLLAMA_VERIFICATION_GUIDE.md) for details.
+See [Automation Command Center](docs/AUTOMATION_COMMAND_CENTER.md), [AI Enhancements Summary](docs/AI_ENHANCEMENTS_SUMMARY.md), and [Ollama Verification Guide](docs/OLLAMA_VERIFICATION_GUIDE.md) for details.
 
 ## 📁 Project Structure
 
