@@ -726,6 +726,33 @@ async def trigger_crawl(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/crawl/cancel")
+async def cancel_crawl(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Cancel any running crawl and prevent overlap."""
+    try:
+        orchestrator = request.app.state.crawler
+        # Signal orchestrator to cancel cooperatively
+        orchestrator._cancel_requested = True
+
+        # Mark any running crawl logs as failed/cancelled
+        result = await db.execute(
+            select(CrawlLog).where(CrawlLog.status == 'running')
+        )
+        running_logs = result.scalars().all()
+        for log in running_logs:
+            log.status = 'failed'
+            log.completed_at = datetime.utcnow()
+            log.error_message = (log.error_message or '') + "\nCancelled by user"
+        await db.commit()
+
+        return {"message": f"Cancellation signaled. Marked {len(running_logs)} running logs as cancelled."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error cancelling crawl: {str(e)}")
+
+
 # Dashboard statistics
 @router.get("/stats")
 async def get_stats(
