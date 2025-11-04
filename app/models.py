@@ -7,11 +7,11 @@ from app.database import Base
 
 
 class User(Base):
-    """User credentials for job platforms"""
+    """User credentials (deprecated - kept for backward compatibility)"""
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True)
-    platform = Column(String(50), unique=True, nullable=False, index=True)  # linkedin, indeed
+    platform = Column(String(50), unique=True, nullable=False, index=True)  # Deprecated - no longer used
     email = Column(String(255), nullable=False)
     encrypted_password = Column(Text, nullable=False)
     is_active = Column(Boolean, default=True)
@@ -52,7 +52,7 @@ class SearchCriteria(Base):
     experience_level = Column(String(50), nullable=True)  # entry, mid, senior, etc.
     salary_min = Column(Integer, nullable=True)
     salary_max = Column(Integer, nullable=True)
-    platforms = Column(JSON, default=["linkedin", "indeed"])  # List of platforms (legacy)
+    platforms = Column(JSON, default=[])  # Deprecated - no longer used
     target_companies = Column(JSON, nullable=True)  # List of company IDs to monitor
     is_active = Column(Boolean, default=True, index=True)
     notify_on_new = Column(Boolean, default=True)
@@ -71,7 +71,7 @@ class Job(Base):
     id = Column(Integer, primary_key=True, index=True)
     search_criteria_id = Column(Integer, ForeignKey("search_criteria.id"), nullable=True, index=True)  # Now nullable for direct company crawls
     company_id = Column(Integer, ForeignKey("companies.id"), nullable=True, index=True)  # New: for company-based crawls
-    platform = Column(String(50), nullable=True, index=True)  # Legacy: linkedin/indeed
+    platform = Column(String(50), nullable=True, index=True)  # Deprecated - legacy field
     external_id = Column(String(255), nullable=False, index=True)  # Platform-specific ID
     title = Column(String(500), nullable=False)
     company = Column(String(255), nullable=False)  # Company name string

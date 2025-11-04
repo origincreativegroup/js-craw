@@ -341,3 +341,105 @@ Example: [2, 5, 8, 12, 15]"""
                 'cons': [],
                 'keywords_matched': []
             }
+
+    async def filter_and_rank_jobs(self, limit: Optional[int] = None) -> List[Job]:
+        """
+        Analyze all jobs in database and rank them based on user preferences.
+        Uses Ollama to intelligently match jobs to user profile.
+        
+        Args:
+            limit: Maximum number of jobs to return (default: all)
+            
+        Returns:
+            List of jobs sorted by AI match score
+        """
+        async with AsyncSessionLocal() as db:
+            # Get user profile/preferences
+            user_profile = await self._get_user_profile(db)
+            
+            # Get all jobs that haven't been analyzed yet or need re-ranking
+            # Focus on new jobs or jobs without ai_recommended flag
+            result = await db.execute(
+                select(Job)
+                .where(Job.description.isnot(None))
+                .order_by(Job.discovered_at.desc())
+                .limit(limit or 1000)  # Limit for performance
+            )
+            jobs = result.scalars().all()
+            
+            logger.info(f"Analyzing {len(jobs)} jobs with AI...")
+            
+            ranked_jobs = []
+            for job in jobs:
+                try:
+                    # Use Ollama to analyze job match
+                    match_data = await self._analyze_job_match(job, user_profile)
+                    
+                    # Update job with AI analysis
+                    if match_data:
+                        job.ai_match_score = match_data.get('match_score', 50)
+                        job.ai_recommended = match_data.get('recommended', False)
+                        job.ai_summary = match_data.get('summary', job.ai_summary)
+                        job.ai_pros = match_data.get('pros', job.ai_pros)
+                        job.ai_cons = match_data.get('cons', job.ai_cons)
+                        job.ai_keywords_matched = match_data.get('keywords_matched', job.ai_keywords_matched)
+                    
+                    ranked_jobs.append(job)
+                    
+                except Exception as e:
+                    logger.error(f"Error analyzing job {job.id}: {e}", exc_info=True)
+                    # Keep job with default score
+                    ranked_jobs.append(job)
+            
+            await db.commit()
+            
+            # Sort by match score (highest first)
+            ranked_jobs.sort(key=lambda j: j.ai_match_score or 0, reverse=True)
+            
+            logger.info(f"Ranked {len(ranked_jobs)} jobs. Top score: {ranked_jobs[0].ai_match_score if ranked_jobs else 'N/A'}")
+            
+            return ranked_jobs
+    
+    async def select_top_jobs(self, count: int = 5) -> List[Job]:
+        """
+        Select the top N jobs for the day based on AI ranking.
+        Marks them with ai_rank and ai_selected_date.
+        
+        Args:
+            count: Number of top jobs to select
+            
+        Returns:
+            List of top ranked jobs
+        """
+        async with AsyncSessionLocal() as db:
+            # Get jobs from today that are recommended or have high scores
+            today = datetime.utcnow().date()
+            result = await db.execute(
+                select(Job)
+                .where(
+                    Job.discovered_at >= datetime.combine(today, datetime.min.time()),
+                    Job.ai_match_score.isnot(None)
+                )
+                .order_by(Job.ai_match_score.desc(), Job.discovered_at.desc())
+                .limit(count * 3)  # Get more candidates for final selection
+            )
+            candidate_jobs = result.scalars().all()
+            
+            if not candidate_jobs:
+                logger.info("No jobs found for today to rank")
+                return []
+            
+            # Use Ollama to make final intelligent selection from candidates
+            top_jobs = await self._intelligent_selection(candidate_jobs[:count * 3], count)
+            
+            # Update rankings
+            today_datetime = datetime.utcnow()
+            for i, job in enumerate(top_jobs, 1):
+                job.ai_rank = i
+                job.ai_selected_date = today_datetime
+                job.ai_recommended = True
+            
+            await db.commit()
+            
+            logger.info(f"Selected top {len(top_jobs)} jobs for today")
+            return top_jobs

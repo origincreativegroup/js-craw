@@ -7,8 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.models import SearchCriteria, Job, CrawlLog, User, Company
-from app.crawler.linkedin_crawler import LinkedInCrawler
-from app.crawler.indeed_crawler import IndeedCrawler
 from app.crawler.greenhouse_crawler import GreenhouseCrawler
 from app.crawler.lever_crawler import LeverCrawler
 from app.crawler.generic_crawler import GenericCrawler
@@ -16,13 +14,12 @@ from app.config import Settings
 from app.ai.analyzer import JobAnalyzer
 from app.ai.job_filter import JobFilter
 from app.notifications.notifier import NotificationService
-from app.utils.crypto import decrypt_password
 
 logger = logging.getLogger(__name__)
 
 
 class CrawlerOrchestrator:
-    """Orchestrates crawling across multiple platforms"""
+    """Orchestrates crawling across company career pages"""
     
     def __init__(self):
         self.analyzer = JobAnalyzer()
@@ -31,8 +28,8 @@ class CrawlerOrchestrator:
     
     async def crawl_all_companies(self) -> List[Dict]:
         """
-        NEW: Crawl ALL active companies and save ALL jobs without filtering.
-        This is the simplified approach for Phase 2 - no search criteria needed.
+        Crawl ALL active companies and filter results using AI.
+        All jobs are analyzed with AI filtering before being saved.
         
         Returns:
             List of newly discovered jobs
@@ -46,7 +43,10 @@ class CrawlerOrchestrator:
             )
             companies = result.scalars().all()
             
-            logger.info(f"Crawling all {len(companies)} active companies (no filtering)")
+            logger.info(f"Crawling all {len(companies)} active companies with AI filtering")
+            
+            # Get user profile once for all filtering
+            user_profile = await self.job_filter._get_user_profile_cached()
             
             for company in companies:
                 log = CrawlLog(
@@ -60,16 +60,20 @@ class CrawlerOrchestrator:
                 await db.commit()
                 
                 try:
-                    # Crawl company career page (no filtering)
+                    # Crawl company career page
                     jobs = await self._crawl_company(company)
                     
-                    # Process and save ALL jobs (skip filtering)
+                    # Apply AI filtering to all jobs
+                    logger.info(f"Applying AI filter to {len(jobs)} jobs from {company.name}")
+                    filtered_jobs = await self.job_filter.filter_jobs_batch(jobs, user_profile)
+                    
+                    # Process and save filtered jobs (AI analysis already included in job data)
                     new_jobs = await self._process_company_jobs(
                         db, 
                         search=None,  # No search criteria
                         company=company, 
-                        jobs=jobs,
-                        skip_filtering=True  # Save all jobs
+                        jobs=filtered_jobs,
+                        skip_ai_analysis=True  # AI analysis already done
                     )
                     
                     log.completed_at = datetime.utcnow()
@@ -85,10 +89,11 @@ class CrawlerOrchestrator:
                         'id': job.id,
                         'title': job.title,
                         'company': job.company,
-                        'url': job.url
+                        'url': job.url,
+                        'ai_match_score': job.ai_match_score
                     } for job in new_jobs])
                     
-                    logger.info(f"✓ {company.name}: Found {len(jobs)} jobs, {len(new_jobs)} new")
+                    logger.info(f"✓ {company.name}: Found {len(jobs)} jobs, {len(filtered_jobs)} passed AI filter, {len(new_jobs)} new")
                     
                 except Exception as e:
                     logger.error(f"Error crawling company {company.name}: {e}", exc_info=True)
@@ -97,17 +102,7 @@ class CrawlerOrchestrator:
                 
                 await db.commit()
         
-        logger.info(f"Crawl complete: {len(all_results)} new jobs from all companies")
-        
-        # After crawling, use AI to intelligently filter and rank all jobs
-        if all_results:
-            logger.info("Running AI job filter to rank and recommend jobs...")
-            try:
-                # Filter and rank jobs (this updates ai_match_score, ai_recommended, etc.)
-                ranked_jobs = await self.job_filter.filter_and_rank_jobs(limit=500)
-                logger.info(f"AI filter analyzed {len(ranked_jobs)} jobs")
-            except Exception as e:
-                logger.error(f"Error in AI job filtering: {e}", exc_info=True)
+        logger.info(f"Crawl complete: {len(all_results)} new jobs from all companies (all AI-filtered)")
         
         return all_results
 
@@ -134,105 +129,29 @@ class CrawlerOrchestrator:
         return all_results
     
     async def run_search(self, db: AsyncSession, search: SearchCriteria) -> List[Dict]:
-        """Run a single search across configured platforms or companies"""
+        """Run a single search across configured companies"""
         results = []
 
-        # Check if this is a company-based search or platform-based search
+        # Only support company-based crawling
         if search.target_companies:
-            # New: Company-based crawling
             logger.info(f"Running company-based search for {len(search.target_companies)} companies")
             results = await self._run_company_search(db, search)
         else:
-            # Legacy: Platform-based crawling (LinkedIn/Indeed)
-            logger.info("Running legacy platform-based search")
-            results = await self._run_platform_search(db, search)
+            logger.warning(f"Search {search.id} has no target companies - skipping")
+            results = []
 
         return results
 
-    async def _run_platform_search(self, db: AsyncSession, search: SearchCriteria) -> List[Dict]:
-        """Run legacy platform-based search (LinkedIn/Indeed)"""
-        results = []
-
-        # Get user credentials
-        user_result = await db.execute(select(User).where(User.id == search.user_id))
-        user_creds = {row.platform: row for row in user_result.scalars().all()}
-
-        platforms = search.platforms or ['linkedin', 'indeed']
-
-        for platform in platforms:
-            log = CrawlLog(
-                search_criteria_id=search.id,
-                platform=platform,
-                started_at=datetime.utcnow(),
-                status='running'
-            )
-            db.add(log)
-            await db.commit()
-            
-            try:
-                jobs = await self._crawl_platform(platform, search, user_creds)
-                
-                # Process and save jobs
-                new_jobs = await self._process_jobs(db, search, jobs)
-                
-                log.completed_at = datetime.utcnow()
-                log.status = 'completed'
-                log.jobs_found = len(jobs)
-                log.new_jobs = len(new_jobs)
-                
-                results.extend(new_jobs)
-                
-            except Exception as e:
-                logger.error(f"Error crawling {platform}: {e}", exc_info=True)
-                log.status = 'failed'
-                log.error_message = str(e)
-            
-            await db.commit()
+    async def _process_jobs(self, db: AsyncSession, search: SearchCriteria, jobs: List[Dict], skip_ai_analysis: bool = False) -> List[Job]:
+        """
+        Process and save jobs with AI analysis
         
-        return results
-    
-    async def _crawl_platform(self, platform: str, search: SearchCriteria, user_creds: Dict) -> List[Dict]:
-        """Crawl a specific platform"""
-        criteria = {
-            'keywords': search.keywords,
-            'location': search.location,
-            'remote_only': search.remote_only,
-            'job_type': search.job_type,
-            'experience_level': search.experience_level,
-        }
-        
-        if platform == 'linkedin':
-            cred = user_creds.get('linkedin')
-            if not cred:
-                logger.warning("No LinkedIn credentials found")
-                return []
-            
-            crawler = LinkedInCrawler(
-                email=cred.email,
-                password=decrypt_password(cred.encrypted_password)
-            )
-            try:
-                return await crawler.search_jobs(criteria)
-            finally:
-                crawler.close()
-        
-        elif platform == 'indeed':
-            cred = user_creds.get('indeed')
-            email = cred.email if cred else None
-            password = decrypt_password(cred.encrypted_password) if cred else None
-            
-            crawler = IndeedCrawler(email=email, password=password)
-            try:
-                return await crawler.search_jobs(criteria)
-            finally:
-                crawler.close()
-        
-        else:
-            logger.warning(f"Unknown platform: {platform}")
-            return []
-    
-    async def _process_jobs(self, db: AsyncSession, search: SearchCriteria, jobs: List[Dict]) -> List[Job]:
-        """Process and save jobs with AI analysis"""
+        Args:
+            db: Database session
+            search: Search criteria
+            jobs: List of job data dictionaries (may already contain AI analysis data)
+            skip_ai_analysis: If True, skip AI analysis (AI data should already be in job_data)
+        """
         new_jobs = []
         
         for job_data in jobs:
@@ -262,16 +181,26 @@ class CrawlerOrchestrator:
                     status='new'
                 )
                 
-                # AI analysis
-                try:
-                    analysis = await self.analyzer.analyze_job(job_data, search)
-                    job.ai_summary = analysis.get('summary')
-                    job.ai_match_score = analysis.get('match_score')
-                    job.ai_pros = analysis.get('pros')
-                    job.ai_cons = analysis.get('cons')
-                    job.ai_keywords_matched = analysis.get('keywords_matched')
-                except Exception as e:
-                    logger.error(f"Error analyzing job: {e}")
+                # AI analysis - use existing data if available, otherwise run analysis
+                if skip_ai_analysis and 'ai_match_score' in job_data:
+                    # AI analysis already done during filtering
+                    job.ai_summary = job_data.get('ai_summary')
+                    job.ai_match_score = job_data.get('ai_match_score')
+                    job.ai_pros = job_data.get('ai_pros')
+                    job.ai_cons = job_data.get('ai_cons')
+                    job.ai_keywords_matched = job_data.get('ai_keywords_matched')
+                    job.ai_recommended = job_data.get('ai_recommended', False)
+                else:
+                    # Legacy: use analyzer for search-based crawls
+                    try:
+                        analysis = await self.analyzer.analyze_job(job_data, search)
+                        job.ai_summary = analysis.get('summary')
+                        job.ai_match_score = analysis.get('match_score')
+                        job.ai_pros = analysis.get('pros')
+                        job.ai_cons = analysis.get('cons')
+                        job.ai_keywords_matched = analysis.get('keywords_matched')
+                    except Exception as e:
+                        logger.error(f"Error analyzing job: {e}")
                 
                 db.add(job)
                 new_jobs.append(job)
@@ -322,11 +251,16 @@ class CrawlerOrchestrator:
                 # Crawl company career page
                 jobs = await self._crawl_company(company)
 
-                # Filter jobs by search criteria (for search-based crawls)
+                # Filter jobs by search criteria (for search-based crawls) - basic keyword filtering
                 filtered_jobs = self._filter_jobs_by_criteria(jobs, search)
+                
+                # Apply AI filtering to all jobs
+                logger.info(f"Applying AI filter to {len(filtered_jobs)} jobs from {company.name}")
+                user_profile = await self.job_filter._get_user_profile_cached()
+                ai_filtered_jobs = await self.job_filter.filter_jobs_batch(filtered_jobs, user_profile)
 
-                # Process and save jobs (with filtering enabled)
-                new_jobs = await self._process_company_jobs(db, search, company, filtered_jobs, skip_filtering=False)
+                # Process and save jobs (AI analysis already included)
+                new_jobs = await self._process_company_jobs(db, search, company, ai_filtered_jobs, skip_ai_analysis=True)
 
                 log.completed_at = datetime.utcnow()
                 log.status = 'completed'
@@ -422,7 +356,7 @@ class CrawlerOrchestrator:
         return filtered
 
     async def _process_company_jobs(self, db: AsyncSession, search: Optional[SearchCriteria],
-                                    company: Company, jobs: List[Dict], skip_filtering: bool = False) -> List[Job]:
+                                    company: Company, jobs: List[Dict], skip_ai_analysis: bool = False) -> List[Job]:
         """
         Process and save jobs from company crawl
         
@@ -430,8 +364,8 @@ class CrawlerOrchestrator:
             db: Database session
             search: Search criteria (optional - None for universal crawl)
             company: Company being crawled
-            jobs: List of job data dictionaries
-            skip_filtering: If True, skip AI analysis (used for universal crawl where filtering happens later)
+            jobs: List of job data dictionaries (may already contain AI analysis data)
+            skip_ai_analysis: If True, skip AI analysis (AI data should already be in job_data)
         """
         new_jobs = []
 
@@ -468,8 +402,17 @@ class CrawlerOrchestrator:
                     status='new'
                 )
 
-                # AI analysis (skip if skip_filtering=True - filtering will happen later via AI agent)
-                if not skip_filtering and search:
+                # AI analysis - use existing data if available, otherwise run analysis
+                if skip_ai_analysis and 'ai_match_score' in job_data:
+                    # AI analysis already done during filtering
+                    job.ai_summary = job_data.get('ai_summary')
+                    job.ai_match_score = job_data.get('ai_match_score')
+                    job.ai_pros = job_data.get('ai_pros')
+                    job.ai_cons = job_data.get('ai_cons')
+                    job.ai_keywords_matched = job_data.get('ai_keywords_matched')
+                    job.ai_recommended = job_data.get('ai_recommended', False)
+                elif search:
+                    # Legacy: use analyzer for search-based crawls
                     try:
                         analysis = await self.analyzer.analyze_job(job_data, search)
                         job.ai_summary = analysis.get('summary')
@@ -479,6 +422,18 @@ class CrawlerOrchestrator:
                         job.ai_keywords_matched = analysis.get('keywords_matched')
                     except Exception as e:
                         logger.error(f"Error analyzing job: {e}")
+                else:
+                    # No search criteria - apply AI filtering
+                    try:
+                        filter_result = await self.job_filter.filter_job(job_data)
+                        job.ai_summary = filter_result.get('summary')
+                        job.ai_match_score = filter_result.get('match_score')
+                        job.ai_pros = filter_result.get('pros')
+                        job.ai_cons = filter_result.get('cons')
+                        job.ai_keywords_matched = filter_result.get('keywords_matched')
+                        job.ai_recommended = filter_result.get('recommended', False)
+                    except Exception as e:
+                        logger.error(f"Error applying AI filter to job: {e}")
 
                 db.add(job)
                 new_jobs.append(job)

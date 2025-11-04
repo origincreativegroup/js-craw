@@ -26,7 +26,7 @@ class SearchCriteriaCreate(BaseModel):
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
     target_companies: Optional[List[int]] = None  # List of company IDs
-    platforms: List[str] = []  # Deprecated, kept for backward compatibility
+    platforms: List[str] = []  # Deprecated - no longer used, company-based crawling only
     notify_on_new: bool = True
 
 

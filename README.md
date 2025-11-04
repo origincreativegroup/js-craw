@@ -1,10 +1,10 @@
 # Job Search Crawler
 
-A comprehensive, production-ready job search automation system that crawls LinkedIn and Indeed, analyzes jobs using local AI, and sends push notifications to your mobile device.
+A comprehensive, production-ready job search automation system that crawls company career pages directly, analyzes jobs using local AI, and sends push notifications to your mobile device.
 
 ## 🎯 Features
 
-- **Automated Crawling**: LinkedIn & Indeed every 30 minutes (configurable)
+- **Automated Crawling**: Company career pages every 30 minutes (configurable)
 - **AI Analysis**: Local LLM (Ollama) for intelligent job matching
 - **Mobile Notifications**: Push alerts via ntfy, Pushover, or Telegram
 - **Web Dashboard**: Clean, responsive UI for managing everything
@@ -23,8 +23,9 @@ js-craw/
 │   ├── api.py                     # FastAPI routes
 │   ├── crawler/                   # Crawler modules
 │   │   ├── __init__.py
-│   │   ├── linkedin_crawler.py    # LinkedIn automation
-│   │   ├── indeed_crawler.py      # Indeed automation
+│   │   ├── greenhouse_crawler.py  # Greenhouse ATS crawler
+│   │   ├── lever_crawler.py       # Lever ATS crawler
+│   │   ├── generic_crawler.py     # AI-assisted generic career page crawler
 │   │   └── orchestrator.py        # Coordinates crawlers
 │   ├── ai/                        # AI analysis
 │   │   ├── __init__.py
