@@ -27,7 +27,7 @@ class Company(Base):
     name = Column(String(255), nullable=False, unique=True, index=True)
     career_page_url = Column(Text, nullable=False)
     is_active = Column(Boolean, default=True, index=True)
-    crawler_type = Column(String(50), nullable=False)  # greenhouse, lever, workday, generic
+    crawler_type = Column(String(50), nullable=False)  # greenhouse, lever, workday, generic, indeed, linkedin
     crawler_config = Column(JSON, nullable=True)  # Custom parsing rules
     last_crawled_at = Column(DateTime, nullable=True)
     jobs_found_total = Column(Integer, default=0)
