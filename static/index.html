@@ -54,6 +54,84 @@
             gap: 16px;
         }
         
+        .crawler-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: #f1f5f9;
+            font-size: 14px;
+        }
+        
+        .crawler-status.running {
+            background: #dbeafe;
+            color: #1e40af;
+            animation: pulse 2s infinite;
+        }
+        
+        .crawler-status.idle {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        
+        .status-indicator.running {
+            background: #3b82f6;
+            animation: blink 1.5s infinite;
+        }
+        
+        .status-indicator.idle {
+            background: #10b981;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        .crawl-activity {
+            margin-top: 16px;
+            padding: 12px;
+            background: #f8fafc;
+            border-radius: 8px;
+            font-size: 13px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .crawl-log-item {
+            padding: 8px;
+            border-left: 3px solid var(--primary);
+            margin-bottom: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+        
+        .crawl-log-item.running {
+            border-left-color: var(--primary);
+            background: #eff6ff;
+        }
+        
+        .crawl-log-item.completed {
+            border-left-color: var(--success);
+        }
+        
+        .crawl-log-item.failed {
+            border-left-color: var(--danger);
+        }
+        
         header h1 {
             font-size: 28px;
             font-weight: 700;
@@ -672,10 +750,17 @@
 <body>
     <div class="container">
         <header>
-            <h1>Career Page Crawler</h1>
+            <div>
+                <h1>Career Page Crawler</h1>
+                <div id="crawler-status" class="crawler-status idle" style="margin-top: 8px;">
+                    <span class="status-indicator idle"></span>
+                    <span id="status-text">Crawler Idle</span>
+                    <span id="status-details" style="font-size: 12px; opacity: 0.8;"></span>
+                </div>
+            </div>
             <div style="display: flex; gap: 12px; align-items: center;">
                 <button class="btn btn-secondary" onclick="showCrawlOptions()">⚙️ Crawl Options</button>
-                <button class="btn btn-primary" onclick="triggerCrawl('searches')">Run Search Crawl</button>
+                <button class="btn btn-primary" onclick="triggerCrawl('searches')" id="crawl-btn">Run Search Crawl</button>
             </div>
         </header>
         
@@ -691,6 +776,16 @@
         <!-- Dashboard Tab -->
         <div id="dashboard" class="tab-content active">
             <div class="stats-grid" id="stats"></div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Recent Crawl Activity</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="loadCrawlStatus()">Refresh</button>
+                </div>
+                <div id="crawl-activity" class="crawl-activity">
+                    <div class="loading">Loading crawl status...</div>
+                </div>
+            </div>
             
             <div class="card">
                 <div class="card-header">
@@ -884,6 +979,7 @@
         const API_BASE = '/api';
         let allCompanies = [];
         let currentJobFilter = '';
+        let crawlStatusInterval = null;
         
         // Toast notification
         function showToast(message, type = 'success') {
@@ -893,6 +989,114 @@
             setTimeout(() => {
                 toast.classList.remove('show');
             }, 3000);
+        }
+        
+        // Load crawl status
+        async function loadCrawlStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/crawl/status`);
+                if (!res.ok) return;
+                const status = await res.json();
+                
+                updateCrawlerStatus(status);
+                updateCrawlActivity(status.recent_logs);
+            } catch (error) {
+                console.error('Error loading crawl status:', error);
+            }
+        }
+        
+        // Update crawler status indicator
+        function updateCrawlerStatus(status) {
+            const statusEl = document.getElementById('crawler-status');
+            const statusText = document.getElementById('status-text');
+            const statusDetails = document.getElementById('status-details');
+            const indicator = statusEl.querySelector('.status-indicator');
+            const crawlBtn = document.getElementById('crawl-btn');
+            
+            if (status.is_running) {
+                statusEl.className = 'crawler-status running';
+                indicator.className = 'status-indicator running';
+                statusText.textContent = `Crawler Running (${status.running_count} active)`;
+                statusDetails.textContent = `Scanning ${status.active_companies} companies...`;
+                crawlBtn.disabled = true;
+                crawlBtn.textContent = 'Crawling...';
+            } else {
+                statusEl.className = 'crawler-status idle';
+                indicator.className = 'status-indicator idle';
+                statusText.textContent = 'Crawler Idle';
+                statusDetails.textContent = `Ready • ${status.active_companies} active companies`;
+                crawlBtn.disabled = false;
+                crawlBtn.textContent = 'Run Search Crawl';
+            }
+        }
+        
+        // Update crawl activity display
+        function updateCrawlActivity(logs) {
+            const container = document.getElementById('crawl-activity');
+            
+            if (logs.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="padding: 20px;"><p>No crawl activity yet</p></div>';
+                return;
+            }
+            
+            container.innerHTML = logs.map(log => {
+                const statusClass = log.status === 'running' ? 'running' : 
+                                   log.status === 'completed' ? 'completed' : 
+                                   log.status === 'failed' ? 'failed' : '';
+                
+                const timeAgo = log.completed_at 
+                    ? getTimeAgo(new Date(log.completed_at))
+                    : log.started_at 
+                    ? getTimeAgo(new Date(log.started_at))
+                    : 'Just now';
+                
+                return `
+                    <div class="crawl-log-item ${statusClass}">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div>
+                                <strong>${log.platform}</strong>
+                                <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                                    ${log.status === 'running' ? '🔄 Running...' : 
+                                      log.status === 'completed' ? `✅ Completed • ${timeAgo}` : 
+                                      `❌ Failed • ${timeAgo}`}
+                                </div>
+                            </div>
+                            <div style="text-align: right; font-size: 12px;">
+                                ${log.jobs_found !== null ? `<div>Found: ${log.jobs_found}</div>` : ''}
+                                ${log.new_jobs !== null ? `<div style="color: var(--success); font-weight: 600;">New: ${log.new_jobs}</div>` : ''}
+                            </div>
+                        </div>
+                        ${log.error_message ? `<div style="color: var(--danger); font-size: 12px; margin-top: 4px;">${log.error_message}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function getTimeAgo(date) {
+            const now = new Date();
+            const diff = now - date;
+            const seconds = Math.floor(diff / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            
+            if (seconds < 60) return 'Just now';
+            if (minutes < 60) return `${minutes}m ago`;
+            if (hours < 24) return `${hours}h ago`;
+            return `${Math.floor(hours / 24)}d ago`;
+        }
+        
+        // Start polling for crawl status
+        function startCrawlStatusPolling() {
+            loadCrawlStatus(); // Load immediately
+            crawlStatusInterval = setInterval(loadCrawlStatus, 3000); // Poll every 3 seconds
+        }
+        
+        // Stop polling
+        function stopCrawlStatusPolling() {
+            if (crawlStatusInterval) {
+                clearInterval(crawlStatusInterval);
+                crawlStatusInterval = null;
+            }
         }
         
         // Tab switching
@@ -912,7 +1116,10 @@
             }
             document.getElementById(tabName).classList.add('active');
             
-            if (tabName === 'dashboard') loadDashboard();
+            if (tabName === 'dashboard') {
+                loadDashboard();
+                loadCrawlStatus();
+            }
             if (tabName === 'companies') loadCompanies();
             if (tabName === 'jobs') loadJobs();
             if (tabName === 'searches') loadSearches();
@@ -1355,8 +1562,12 @@
                 showToast(`Starting ${crawlTypeName}...`, 'success');
                 closeCrawlModal();
                 
+                // Start polling for status updates
+                startCrawlStatusPolling();
+                
                 const res = await fetch(url, {method: 'POST'});
                 if (!res.ok) {
+                    stopCrawlStatusPolling();
                     let errorDetail = 'Error running crawl';
                     try {
                         const errorData = await res.json();
@@ -1369,22 +1580,33 @@
                         }
                     }
                     showToast(errorDetail, 'error');
+                    loadCrawlStatus(); // Refresh status
                     return;
                 }
                 const data = await res.json();
-                const message = crawlType === 'all' 
-                    ? `Universal crawl completed! Found ${data.new_jobs || 0} new jobs (AI-filtered).`
-                    : `Search crawl completed! Found ${data.new_jobs || 0} new jobs.`;
-                showToast(message, 'success');
+                
+                // Continue polling for a bit to catch any final updates
+                setTimeout(() => {
+                    loadCrawlStatus();
+                    setTimeout(() => {
+                        stopCrawlStatusPolling();
+                        const message = crawlType === 'all' 
+                            ? `Universal crawl completed! Found ${data.new_jobs || 0} new jobs (AI-filtered).`
+                            : `Search crawl completed! Found ${data.new_jobs || 0} new jobs.`;
+                        showToast(message, 'success');
+                    }, 2000);
+                }, 1000);
                 
                 // Refresh dashboard and jobs
                 setTimeout(() => {
                     loadDashboard();
                     loadJobs();
-                }, 1000);
+                }, 2000);
             } catch (error) {
+                stopCrawlStatusPolling();
                 console.error('Error running crawl:', error);
                 showToast('Error running crawl', 'error');
+                loadCrawlStatus();
             }
         }
         
@@ -1396,6 +1618,7 @@
         // Initial load
         loadDashboard();
         loadCompanies();
+        startCrawlStatusPolling(); // Start polling for crawl status
     </script>
 </body>
 </html>

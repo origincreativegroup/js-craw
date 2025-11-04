@@ -1,7 +1,7 @@
 """FastAPI routes"""
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -728,6 +728,58 @@ async def get_stats(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading statistics: {str(e)}")
+
+
+# Crawl status endpoint
+@router.get("/crawl/status")
+async def get_crawl_status(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(10, description="Number of recent crawl logs to return")
+):
+    """Get recent crawl status and logs"""
+    try:
+        # Get recent crawl logs
+        result = await db.execute(
+            select(CrawlLog)
+            .order_by(desc(CrawlLog.started_at))
+            .limit(limit)
+        )
+        logs = result.scalars().all()
+        
+        # Check for any running crawls
+        running_result = await db.execute(
+            select(CrawlLog).where(CrawlLog.status == 'running')
+        )
+        running_logs = running_result.scalars().all()
+        
+        # Get summary statistics
+        total_companies = await db.execute(
+            select(func.count(Company.id)).where(Company.is_active == True)
+        )
+        active_companies = total_companies.scalar() or 0
+        
+        return {
+            "is_running": len(running_logs) > 0,
+            "running_count": len(running_logs),
+            "recent_logs": [
+                {
+                    "id": log.id,
+                    "company_id": log.company_id,
+                    "search_criteria_id": log.search_criteria_id,
+                    "platform": log.platform,
+                    "status": log.status,
+                    "started_at": log.started_at.isoformat() if log.started_at else None,
+                    "completed_at": log.completed_at.isoformat() if log.completed_at else None,
+                    "jobs_found": log.jobs_found,
+                    "new_jobs": log.new_jobs,
+                    "error_message": log.error_message
+                }
+                for log in logs
+            ],
+            "active_companies": active_companies
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading crawl status: {str(e)}")
 
 
 # OpenWebUI integration
