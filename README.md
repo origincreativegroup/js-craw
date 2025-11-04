@@ -122,6 +122,7 @@ Within 2-3 minutes, you should:
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Technical architecture
 - **[docs/PROJECT_SUMMARY.md](docs/PROJECT_SUMMARY.md)** - Complete feature overview
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** - CI/CD pipeline and deployment guide
+- **[docs/CODEX_CLAUDE_CURSOR_HANDSHAKE.md](docs/CODEX_CLAUDE_CURSOR_HANDSHAKE.md)** - Coordination guide for multi-agent AI workflows
 
 ## 🔧 Configuration
 
