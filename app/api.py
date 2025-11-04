@@ -1,5 +1,5 @@
 """FastAPI routes"""
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from sqlalchemy.exc import IntegrityError
@@ -648,17 +648,42 @@ async def save_credentials(
 @router.post("/crawl/run")
 async def trigger_crawl(
     request: Request,
+    crawl_type: Optional[str] = Query(None, description="Crawl type: 'searches' (default) or 'all'"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Manually trigger a crawl"""
+    """
+    Manually trigger a crawl.
+    
+    By default, runs all active searches. If crawl_type="all", crawls all companies
+    with AI filtering (base crawling).
+    
+    Query params:
+        crawl_type: "searches" (default) or "all"
+    """
     try:
         orchestrator = request.app.state.crawler
-        results = await orchestrator.run_all_searches()
         
-        return {
-            "message": "Crawl completed",
-            "new_jobs": len(results)
-        }
+        # Default to "searches" if not specified
+        if crawl_type is None or crawl_type == "searches":
+            # Search-based crawling: run all active searches
+            results = await orchestrator.run_all_searches()
+            return {
+                "message": "Search-based crawl completed",
+                "new_jobs": len(results),
+                "crawl_type": "searches"
+            }
+        elif crawl_type == "all":
+            # Base crawling: crawl all companies and use AI to filter
+            results = await orchestrator.crawl_all_companies()
+            return {
+                "message": "Universal crawl completed (all companies crawled, AI-filtered)",
+                "new_jobs": len(results),
+                "crawl_type": "universal"
+            }
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid crawl_type: {crawl_type}. Use 'searches' or 'all'")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

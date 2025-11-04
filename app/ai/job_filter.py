@@ -148,6 +148,11 @@ class JobFilter:
             'education': profile.education or []
         }
     
+    async def _get_user_profile_cached(self) -> Optional[Dict]:
+        """Get user profile with caching (for batch processing)"""
+        async with AsyncSessionLocal() as db:
+            return await self._get_user_profile(db)
+    
     async def _analyze_job_match(self, job: Job, user_profile: Dict) -> Optional[Dict]:
         """
         Use Ollama to intelligently analyze how well a job matches user preferences
@@ -182,6 +187,51 @@ Title: {job.title}
 Company: {job.company}
 Location: {job.location or 'Not specified'}
 Job Type: {job.job_type or 'Not specified'}
+Description: {job_desc}
+
+USER PREFERENCES:
+- Keywords/Interests: {user_prefs or 'Not specified'}
+- Remote Preferred: {remote_pref}
+- Experience Level: {exp_level or 'Any'}
+- User Skills: {', '.join(skills[:10]) if skills else 'Not specified'}
+
+Analyze this job and provide a JSON response with this exact format:
+{{
+    "match_score": 85,
+    "recommended": true,
+    "summary": "Brief 2-3 sentence summary of why this is a good match",
+    "pros": ["Why this job fits well - 3-5 reasons"],
+    "cons": ["Potential concerns - 2-3 reasons"],
+    "keywords_matched": ["Specific keywords from preferences that match"],
+    "reasoning": "Detailed explanation of the match score"
+}}
+
+Guidelines:
+- Match score: 0-100 (100 = perfect match)
+- Consider: job requirements, location (remote vs on-site), company, role level, skills needed
+- Be honest about cons - don't oversell
+- recommended: true if match_score >= 70
+
+Return ONLY valid JSON, no markdown formatting."""
+        
+        return prompt
+    
+    def _build_match_prompt_from_dict(self, job_data: Dict, preferences: Dict, skills: List) -> str:
+        """Build intelligent prompt for Ollama to analyze job match from job dict"""
+        
+        job_desc = (job_data.get('description') or '')[:2000]  # Limit description length
+        
+        user_prefs = preferences.get('keywords', '')
+        remote_pref = preferences.get('remote_preferred', True)
+        exp_level = preferences.get('experience_level', '')
+        
+        prompt = f"""You are an intelligent job matching assistant. Analyze how well this job matches the user's preferences and provide a detailed assessment.
+
+JOB POSTING:
+Title: {job_data.get('title', 'Unknown')}
+Company: {job_data.get('company', 'Unknown')}
+Location: {job_data.get('location') or 'Not specified'}
+Job Type: {job_data.get('job_type') or 'Not specified'}
 Description: {job_desc}
 
 USER PREFERENCES:
@@ -341,6 +391,107 @@ Example: [2, 5, 8, 12, 15]"""
                 'cons': [],
                 'keywords_matched': []
             }
+    
+    async def filter_job(self, job_data: Dict) -> Dict:
+        """
+        Filter a single job using AI analysis.
+        
+        Args:
+            job_data: Job dictionary with title, company, location, description, etc.
+            
+        Returns:
+            Job dictionary with AI analysis added (match_score, summary, pros, cons, etc.)
+        """
+        try:
+            user_profile = await self._get_user_profile_cached()
+            if not user_profile:
+                # If no profile, return job with default score
+                job_data['ai_match_score'] = 50
+                job_data['ai_recommended'] = False
+                return job_data
+            
+            # Build prompt from job dict
+            prompt = self._build_match_prompt_from_dict(job_data, user_profile.get('preferences', {}), user_profile.get('skills', []))
+            
+            # Call Ollama
+            response_text = await self._call_ollama(prompt)
+            match_data = self._parse_match_response(response_text)
+            
+            # Add AI analysis to job data
+            job_data['ai_match_score'] = match_data.get('match_score', 50)
+            job_data['ai_recommended'] = match_data.get('recommended', False)
+            job_data['ai_summary'] = match_data.get('summary', '')
+            job_data['ai_pros'] = match_data.get('pros', [])
+            job_data['ai_cons'] = match_data.get('cons', [])
+            job_data['ai_keywords_matched'] = match_data.get('keywords_matched', [])
+            
+            return job_data
+            
+        except Exception as e:
+            logger.error(f"Error filtering job {job_data.get('title', 'Unknown')}: {e}", exc_info=True)
+            # Return job with default scores
+            job_data['ai_match_score'] = 50
+            job_data['ai_recommended'] = False
+            return job_data
+    
+    async def filter_jobs_batch(self, jobs: List[Dict], user_profile: Optional[Dict] = None) -> List[Dict]:
+        """
+        Filter a batch of jobs using AI analysis.
+        This is more efficient than filtering one by one.
+        
+        Args:
+            jobs: List of job dictionaries
+            user_profile: Optional user profile (if None, will fetch it)
+            
+        Returns:
+            List of job dictionaries with AI analysis added
+        """
+        if not jobs:
+            return []
+        
+        # Get user profile if not provided
+        if user_profile is None:
+            user_profile = await self._get_user_profile_cached()
+        
+        if not user_profile:
+            # If no profile, return jobs with default scores
+            for job in jobs:
+                job.setdefault('ai_match_score', 50)
+                job.setdefault('ai_recommended', False)
+            return jobs
+        
+        preferences = user_profile.get('preferences', {})
+        skills = user_profile.get('skills', [])
+        
+        filtered_jobs = []
+        for job_data in jobs:
+            try:
+                # Build prompt
+                prompt = self._build_match_prompt_from_dict(job_data, preferences, skills)
+                
+                # Call Ollama
+                response_text = await self._call_ollama(prompt)
+                match_data = self._parse_match_response(response_text)
+                
+                # Add AI analysis to job data
+                job_data['ai_match_score'] = match_data.get('match_score', 50)
+                job_data['ai_recommended'] = match_data.get('recommended', False)
+                job_data['ai_summary'] = match_data.get('summary', '')
+                job_data['ai_pros'] = match_data.get('pros', [])
+                job_data['ai_cons'] = match_data.get('cons', [])
+                job_data['ai_keywords_matched'] = match_data.get('keywords_matched', [])
+                
+                filtered_jobs.append(job_data)
+                
+            except Exception as e:
+                logger.error(f"Error filtering job {job_data.get('title', 'Unknown')}: {e}", exc_info=True)
+                # Add default scores and continue
+                job_data.setdefault('ai_match_score', 50)
+                job_data.setdefault('ai_recommended', False)
+                filtered_jobs.append(job_data)
+        
+        logger.info(f"Filtered {len(jobs)} jobs, {len([j for j in filtered_jobs if j.get('ai_recommended', False)])} recommended")
+        return filtered_jobs
 
     async def filter_and_rank_jobs(self, limit: Optional[int] = None) -> List[Job]:
         """

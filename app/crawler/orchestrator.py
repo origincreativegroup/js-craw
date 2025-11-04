@@ -30,6 +30,7 @@ class CrawlerOrchestrator:
         """
         Crawl ALL active companies and filter results using AI.
         All jobs are analyzed with AI filtering before being saved.
+        This is the base crawling functionality that crawls any available jobs.
         
         Returns:
             List of newly discovered jobs
@@ -60,12 +61,16 @@ class CrawlerOrchestrator:
                 await db.commit()
                 
                 try:
-                    # Crawl company career page
+                    # Crawl company career page - get ALL available jobs
                     jobs = await self._crawl_company(company)
+                    logger.info(f"Found {len(jobs)} jobs from {company.name}")
                     
-                    # Apply AI filtering to all jobs
-                    logger.info(f"Applying AI filter to {len(jobs)} jobs from {company.name}")
-                    filtered_jobs = await self.job_filter.filter_jobs_batch(jobs, user_profile)
+                    # Apply AI filtering to all jobs (no search criteria filtering for base crawl)
+                    if jobs:
+                        logger.info(f"Applying AI filter to {len(jobs)} jobs from {company.name}")
+                        filtered_jobs = await self.job_filter.filter_jobs_batch(jobs, user_profile)
+                    else:
+                        filtered_jobs = []
                     
                     # Process and save filtered jobs (AI analysis already included in job data)
                     new_jobs = await self._process_company_jobs(
@@ -132,13 +137,20 @@ class CrawlerOrchestrator:
         """Run a single search across configured companies"""
         results = []
 
-        # Only support company-based crawling
-        if search.target_companies:
-            logger.info(f"Running company-based search for {len(search.target_companies)} companies")
-            results = await self._run_company_search(db, search)
-        else:
-            logger.warning(f"Search {search.id} has no target companies - skipping")
-            results = []
+        # If no target_companies specified, use all active companies
+        if not search.target_companies:
+            logger.info(f"Search {search.id} has no target companies - using all active companies")
+            # Get all active companies
+            result = await db.execute(
+                select(Company).where(Company.is_active == True)
+            )
+            all_companies = result.scalars().all()
+            search.target_companies = [c.id for c in all_companies]
+            logger.info(f"Using {len(search.target_companies)} active companies for search")
+
+        # Run company-based search
+        logger.info(f"Running company-based search for {len(search.target_companies)} companies")
+        results = await self._run_company_search(db, search)
 
         return results
 
@@ -235,11 +247,15 @@ class CrawlerOrchestrator:
         )
         companies = result.scalars().all()
 
-        logger.info(f"Crawling {len(companies)} companies")
+        logger.info(f"Crawling {len(companies)} companies for search '{search.name}'")
+
+        # Get user profile once for all filtering
+        user_profile = await self.job_filter._get_user_profile_cached()
 
         for company in companies:
             log = CrawlLog(
                 search_criteria_id=search.id,
+                company_id=company.id,
                 platform=f"company_{company.id}",
                 started_at=datetime.utcnow(),
                 status='running'
@@ -248,16 +264,20 @@ class CrawlerOrchestrator:
             await db.commit()
 
             try:
-                # Crawl company career page
+                # Crawl company career page - get ALL jobs from the company
                 jobs = await self._crawl_company(company)
+                logger.info(f"Found {len(jobs)} jobs from {company.name}")
 
-                # Filter jobs by search criteria (for search-based crawls) - basic keyword filtering
+                # Filter jobs by search criteria (basic keyword/location filtering)
                 filtered_jobs = self._filter_jobs_by_criteria(jobs, search)
+                logger.info(f"After search criteria filtering: {len(filtered_jobs)} jobs from {company.name}")
                 
                 # Apply AI filtering to all jobs
-                logger.info(f"Applying AI filter to {len(filtered_jobs)} jobs from {company.name}")
-                user_profile = await self.job_filter._get_user_profile_cached()
-                ai_filtered_jobs = await self.job_filter.filter_jobs_batch(filtered_jobs, user_profile)
+                if filtered_jobs:
+                    logger.info(f"Applying AI filter to {len(filtered_jobs)} jobs from {company.name}")
+                    ai_filtered_jobs = await self.job_filter.filter_jobs_batch(filtered_jobs, user_profile)
+                else:
+                    ai_filtered_jobs = []
 
                 # Process and save jobs (AI analysis already included)
                 new_jobs = await self._process_company_jobs(db, search, company, ai_filtered_jobs, skip_ai_analysis=True)
@@ -271,7 +291,15 @@ class CrawlerOrchestrator:
                 company.last_crawled_at = datetime.utcnow()
                 company.jobs_found_total += len(new_jobs)
 
-                results.extend(new_jobs)
+                results.extend([{
+                    'id': job.id,
+                    'title': job.title,
+                    'company': job.company,
+                    'url': job.url,
+                    'ai_match_score': job.ai_match_score
+                } for job in new_jobs])
+
+                logger.info(f"✓ {company.name}: Found {len(jobs)} jobs, {len(filtered_jobs)} passed search criteria, {len(ai_filtered_jobs)} passed AI filter, {len(new_jobs)} new")
 
             except Exception as e:
                 logger.error(f"Error crawling company {company.name}: {e}", exc_info=True)

@@ -673,7 +673,10 @@
     <div class="container">
         <header>
             <h1>Career Page Crawler</h1>
-            <button class="btn btn-primary" onclick="triggerCrawl()">Run Crawl Now</button>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <button class="btn btn-secondary" onclick="showCrawlOptions()">⚙️ Crawl Options</button>
+                <button class="btn btn-primary" onclick="triggerCrawl('searches')">Run Search Crawl</button>
+            </div>
         </header>
         
         <div class="tabs">
@@ -725,7 +728,12 @@
         <div id="searches" class="tab-content">
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">Search Criteria</h2>
+                    <div>
+                        <h2 class="card-title">Search Criteria</h2>
+                        <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
+                            💡 Searches without selected companies will automatically use all active companies
+                        </p>
+                    </div>
                     <button class="btn btn-primary btn-sm" onclick="showSearchModal()">+ New Search</button>
                 </div>
                 <div id="searches-list"></div>
@@ -828,13 +836,44 @@
                     <label for="search-remote">Remote Only</label>
                 </div>
                 <div class="form-group">
-                    <label>Select Companies:</label>
+                    <label>Select Companies (Optional):</label>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
+                        💡 If no companies selected, all active companies will be searched
+                    </p>
                     <div id="companies-selection" class="companies-selection">
                         <p class="loading">Loading companies...</p>
                     </div>
                 </div>
                 <button type="submit" class="btn btn-primary">Create Search</button>
             </form>
+        </div>
+    </div>
+    
+    <!-- Crawl Options Modal -->
+    <div id="crawl-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Crawl Options</h2>
+                <button class="close" onclick="closeCrawlModal()">&times;</button>
+            </div>
+            <div style="padding: 20px 0;">
+                <div class="card" style="margin-bottom: 16px; cursor: pointer;" onclick="triggerCrawl('searches')" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='var(--card-bg)'">
+                    <h3 style="margin-bottom: 8px;">🔍 Search-Based Crawl</h3>
+                    <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 12px;">
+                        Runs all active searches across their configured companies (or all companies if none specified).
+                        Jobs are filtered by search criteria and AI analysis.
+                    </p>
+                    <button class="btn btn-primary btn-sm">Run Search Crawl</button>
+                </div>
+                <div class="card" style="cursor: pointer;" onclick="triggerCrawl('all')" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='var(--card-bg)'">
+                    <h3 style="margin-bottom: 8px;">🌐 Universal Crawl (All Companies)</h3>
+                    <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 12px;">
+                        Crawls ALL active companies and uses AI to filter results. 
+                        This is the base crawling functionality that finds any available jobs.
+                    </p>
+                    <button class="btn btn-success btn-sm">Run Universal Crawl</button>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -906,6 +945,10 @@
                     <div class="stat-card">
                         <div class="stat-value">${stats.active_searches || 0}</div>
                         <div class="stat-label">Active Searches</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">🤖</div>
+                        <div class="stat-label">AI Filtering Enabled</div>
                     </div>
                 `;
                 
@@ -1070,9 +1113,10 @@
                         <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
                             ${(s.target_companies || []).length > 0 ? 
                                 `<span class="badge badge-primary">${(s.target_companies || []).length} companies</span>` : 
-                                '<span class="badge badge-secondary">All companies</span>'
+                                '<span class="badge badge-secondary">✨ All companies (AI-filtered)</span>'
                             }
                             ${s.is_active ? '<span class="badge badge-success">Active</span>' : ''}
+                            <span class="badge badge-warning">🤖 AI Filtering Enabled</span>
                         </div>
                     </div>
                 `).join('');
@@ -1166,7 +1210,10 @@
                     return;
                 }
                 
-                showToast('Search created successfully');
+                const message = selectedCompanies.length > 0 
+                    ? `Search created successfully! Will search ${selectedCompanies.length} companies.`
+                    : 'Search created successfully! Will search all active companies (AI-filtered).';
+                showToast(message);
                 closeSearchModal();
                 loadSearches();
             } catch (error) {
@@ -1286,12 +1333,29 @@
             }
         }
         
+        // Show crawl options modal
+        function showCrawlOptions() {
+            document.getElementById('crawl-modal').classList.add('active');
+        }
+        
+        function closeCrawlModal() {
+            document.getElementById('crawl-modal').classList.remove('active');
+        }
+        
         // Trigger crawl
-        async function triggerCrawl() {
-            if (!confirm('Start a manual crawl now?')) return;
+        async function triggerCrawl(crawlType = 'searches') {
+            const crawlTypeName = crawlType === 'all' ? 'Universal Crawl (all companies)' : 'Search-Based Crawl';
+            if (!confirm(`Start ${crawlTypeName} now?\n\n${crawlType === 'all' ? 'This will crawl all active companies and use AI to filter results.' : 'This will run all active searches.'}`)) return;
             
             try {
-                const res = await fetch(`${API_BASE}/crawl/run`, {method: 'POST'});
+                const url = crawlType === 'all' 
+                    ? `${API_BASE}/crawl/run?crawl_type=all`
+                    : `${API_BASE}/crawl/run?crawl_type=searches`;
+                
+                showToast(`Starting ${crawlTypeName}...`, 'success');
+                closeCrawlModal();
+                
+                const res = await fetch(url, {method: 'POST'});
                 if (!res.ok) {
                     let errorDetail = 'Error running crawl';
                     try {
@@ -1308,9 +1372,18 @@
                     return;
                 }
                 const data = await res.json();
-                showToast(`Crawl completed! Found ${data.new_jobs || 0} new jobs.`);
-                loadDashboard();
+                const message = crawlType === 'all' 
+                    ? `Universal crawl completed! Found ${data.new_jobs || 0} new jobs (AI-filtered).`
+                    : `Search crawl completed! Found ${data.new_jobs || 0} new jobs.`;
+                showToast(message, 'success');
+                
+                // Refresh dashboard and jobs
+                setTimeout(() => {
+                    loadDashboard();
+                    loadJobs();
+                }, 1000);
             } catch (error) {
+                console.error('Error running crawl:', error);
                 showToast('Error running crawl', 'error');
             }
         }
