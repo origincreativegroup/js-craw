@@ -35,6 +35,17 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
     
+    # Load companies from CSV as fallback if database is empty or has few companies
+    try:
+        from app.utils.company_loader import load_companies_from_csv
+        result = await load_companies_from_csv(min_companies=10)
+        if result.get("success") and result.get("added", 0) > 0:
+            logger.info(f"Loaded {result['added']} companies from companies.csv (fallback)")
+        elif result.get("reason") == "sufficient_companies":
+            logger.debug(f"Company database has sufficient companies ({result.get('current_count', 0)})")
+    except Exception as e:
+        logger.warning(f"Failed to load companies from CSV: {e}", exc_info=True)
+    
     # Create orchestrator first (will be updated with bot agent)
     orchestrator = CrawlerOrchestrator(bot_agent=None)
     app.state.crawler = orchestrator

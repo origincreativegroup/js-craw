@@ -352,6 +352,46 @@ async def create_company(
         raise HTTPException(status_code=500, detail=f"Error creating company: {str(e)}")
 
 
+@router.post("/companies/load-from-csv")
+async def load_companies_from_csv_endpoint(
+    force: bool = False,
+    min_companies: int = 10
+):
+    """
+    Load companies from companies.csv file.
+    
+    Args:
+        force: If True, load even if database has sufficient companies
+        min_companies: Minimum number of companies required before loading (ignored if force=True)
+    
+    Returns:
+        Result of the load operation
+    """
+    try:
+        from app.utils.company_loader import load_companies_from_csv
+        
+        # If force is True, set min_companies to a very high number to always load
+        result = await load_companies_from_csv(
+            min_companies=999999 if force else min_companies
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to load companies: {result.get('reason', 'unknown error')}"
+            )
+        
+        return {
+            "message": "Companies loaded successfully",
+            **result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading companies from CSV: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error loading companies: {str(e)}")
+
+
 @router.patch("/companies/{company_id}")
 async def update_company(
     company_id: int,
