@@ -1020,8 +1020,18 @@
                 });
                 
                 if (!res.ok) {
-                    const error = await res.json().catch(() => ({detail: await res.text()}));
-                    showToast(error.detail || 'Error creating company', 'error');
+                    let errorDetail = 'Error creating company';
+                    try {
+                        const errorData = await res.json();
+                        errorDetail = errorData.detail || errorDetail;
+                    } catch {
+                        try {
+                            errorDetail = await res.text();
+                        } catch {
+                            // Use default error message
+                        }
+                    }
+                    showToast(errorDetail, 'error');
                     return;
                 }
                 
@@ -1141,8 +1151,18 @@
                 });
                 
                 if (!res.ok) {
-                    const error = await res.json().catch(() => ({detail: await res.text()}));
-                    showToast(error.detail || 'Error creating search', 'error');
+                    let errorDetail = 'Error creating search';
+                    try {
+                        const errorData = await res.json();
+                        errorDetail = errorData.detail || errorDetail;
+                    } catch {
+                        try {
+                            errorDetail = await res.text();
+                        } catch {
+                            // Use default error message
+                        }
+                    }
+                    showToast(errorDetail, 'error');
                     return;
                 }
                 
@@ -1273,8 +1293,18 @@
             try {
                 const res = await fetch(`${API_BASE}/crawl/run`, {method: 'POST'});
                 if (!res.ok) {
-                    const error = await res.json().catch(() => ({detail: await res.text()}));
-                    showToast(error.detail || 'Error running crawl', 'error');
+                    let errorDetail = 'Error running crawl';
+                    try {
+                        const errorData = await res.json();
+                        errorDetail = errorData.detail || errorDetail;
+                    } catch {
+                        try {
+                            errorDetail = await res.text();
+                        } catch {
+                            // Use default error message
+                        }
+                    }
+                    showToast(errorDetail, 'error');
                     return;
                 }
                 const data = await res.json();
