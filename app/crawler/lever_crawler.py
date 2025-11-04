@@ -106,9 +106,14 @@ class LeverCrawler:
                 except:
                     pass
 
-            # Get description
+            # Get description (prefer full description, fallback to plain)
             description = job_data.get("description", "") or job_data.get("descriptionPlain", "")
-
+            
+            # Extract additional metadata for better filtering
+            categories = job_data.get("categories", {})
+            team = categories.get("team", "")
+            department = categories.get("department", "")
+            
             normalized = {
                 "external_id": f"lever_{self.company_slug}_{job_id}",
                 "title": job_data.get("text", "").strip(),
@@ -120,7 +125,8 @@ class LeverCrawler:
                 "job_type": commitment,
                 "posted_date": posted_date,
                 "platform": "lever",
-                "team": team,  # Extra field
+                "team": team,
+                "departments": [department] if department else [],  # Add department for filtering
             }
 
             return normalized

@@ -219,7 +219,16 @@ Return ONLY valid JSON, no markdown formatting."""
     def _build_match_prompt_from_dict(self, job_data: Dict, preferences: Dict, skills: List) -> str:
         """Build intelligent prompt for Ollama to analyze job match from job dict"""
         
-        job_desc = (job_data.get('description') or '')[:2000]  # Limit description length
+        # Use full description for better filtering (up to 4000 chars for more context)
+        job_desc = (job_data.get('description') or '')[:4000]
+        
+        # Extract additional metadata
+        title = job_data.get('title', 'Unknown')
+        company = job_data.get('company', 'Unknown')
+        location = job_data.get('location') or 'Not specified'
+        job_type = job_data.get('job_type') or 'Not specified'
+        departments = job_data.get('departments', [])
+        dept_str = ', '.join(departments) if isinstance(departments, list) else ''
         
         user_prefs = preferences.get('keywords', '')
         remote_pref = preferences.get('remote_preferred', True)
@@ -228,11 +237,12 @@ Return ONLY valid JSON, no markdown formatting."""
         prompt = f"""You are an intelligent job matching assistant. Analyze how well this job matches the user's preferences and provide a detailed assessment.
 
 JOB POSTING:
-Title: {job_data.get('title', 'Unknown')}
-Company: {job_data.get('company', 'Unknown')}
-Location: {job_data.get('location') or 'Not specified'}
-Job Type: {job_data.get('job_type') or 'Not specified'}
-Description: {job_desc}
+Title: {title}
+Company: {company}
+Location: {location}
+Job Type: {job_type}
+{'Departments: ' + dept_str if dept_str else ''}
+Description: {job_desc if job_desc else 'No description available'}
 
 USER PREFERENCES:
 - Keywords/Interests: {user_prefs or 'Not specified'}
@@ -253,8 +263,9 @@ Analyze this job and provide a JSON response with this exact format:
 
 Guidelines:
 - Match score: 0-100 (100 = perfect match)
-- Consider: job requirements, location (remote vs on-site), company, role level, skills needed
+- Consider: job requirements, location (remote vs on-site), company, role level, skills needed, department/team
 - Be honest about cons - don't oversell
+- If description is empty or very short, use title, company, location, and job type to make assessment
 - recommended: true if match_score >= 70
 
 Return ONLY valid JSON, no markdown formatting."""

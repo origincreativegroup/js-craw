@@ -25,7 +25,7 @@ class GreenhouseCrawler:
 
     async def fetch_jobs(self) -> List[Dict]:
         """
-        Fetch all jobs from Greenhouse API
+        Fetch all jobs from Greenhouse API with full descriptions
 
         Returns:
             List of job dictionaries with normalized fields
@@ -46,6 +46,27 @@ class GreenhouseCrawler:
                 normalized_jobs = []
                 for job in jobs_data:
                     try:
+                        # Fetch full job details if job ID is available
+                        job_id = job.get("id")
+                        if job_id:
+                            # Try to get full job description from job detail endpoint
+                            try:
+                                detail_url = f"{self.base_url}/jobs/{job_id}"
+                                detail_response = await client.get(detail_url, timeout=10.0)
+                                if detail_response.status_code == 200:
+                                    detail_data = detail_response.json()
+                                    # Use full content if available
+                                    if detail_data.get("content"):
+                                        job["content"] = detail_data["content"]
+                                    # Also merge other useful fields
+                                    if detail_data.get("departments"):
+                                        job["departments"] = detail_data["departments"]
+                                    if detail_data.get("offices"):
+                                        job["offices"] = detail_data["offices"]
+                            except Exception as e:
+                                logger.debug(f"Could not fetch job details for {job_id}: {e}")
+                                # Continue with basic job data
+                        
                         normalized = self._normalize_job(job)
                         if normalized:
                             normalized_jobs.append(normalized)
@@ -112,6 +133,13 @@ class GreenhouseCrawler:
                 except:
                     pass
 
+            # Get full description (content field contains full job description)
+            description = job_data.get("content", "") or job_data.get("description", "")
+            
+            # Extract departments if available
+            departments = job_data.get("departments", [])
+            department_names = [d.get("name", "") for d in departments if isinstance(d, dict)]
+            
             normalized = {
                 "external_id": f"greenhouse_{self.company_slug}_{job_id}",
                 "title": job_data.get("title", "").strip(),
@@ -119,10 +147,11 @@ class GreenhouseCrawler:
                 "location": location_str,
                 "url": absolute_url,
                 "source_url": absolute_url,
-                "description": job_data.get("content", ""),
+                "description": description,
                 "job_type": job_type,
                 "posted_date": posted_date,
                 "platform": "greenhouse",
+                "departments": department_names,  # Add departments for better filtering
             }
 
             return normalized
