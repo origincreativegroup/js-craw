@@ -29,18 +29,18 @@ echo "Current commit: $CURRENT_COMMIT"
 # Build Docker image
 echo ""
 echo "Building Docker image..."
-if docker-compose build job-crawler; then
+if docker compose build job-crawler; then
     echo "✓ Docker image built successfully"
 else
     echo "✗ Docker build failed"
     exit 1
 fi
 
-# Restart containers
+# Restart containers with force recreate to ensure new images are used
 echo ""
-echo "Restarting containers..."
-if docker-compose up -d; then
-    echo "✓ Containers restarted successfully"
+echo "Restarting containers with new images..."
+if docker compose down && docker compose up -d --force-recreate; then
+    echo "✓ Containers restarted successfully with new images"
 else
     echo "✗ Container restart failed"
     exit 1

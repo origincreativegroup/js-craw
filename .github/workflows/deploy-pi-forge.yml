@@ -84,12 +84,17 @@ jobs:
         id: deploy
         working-directory: /home/admin/js-craw
         run: |
-          echo "🚀 Starting containers..."
-          if docker compose up -d; then
-            echo "✅ Containers started"
+          echo "🚀 Deploying containers with new images..."
+          
+          # Stop and remove existing containers to ensure clean deployment
+          docker compose down || true
+          
+          # Start containers with force recreate to ensure new images are used
+          if docker compose up -d --force-recreate --build; then
+            echo "✅ Containers deployed successfully"
             echo "deploy_success=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ Failed to start containers"
+            echo "❌ Failed to deploy containers"
             echo "deploy_success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
