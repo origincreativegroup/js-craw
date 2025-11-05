@@ -379,6 +379,164 @@ async def get_company_health(
         raise HTTPException(status_code=500, detail=f"Error loading company health: {str(e)}")
 
 
+@router.get("/companies/discovery/status")
+async def get_discovery_status(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get company discovery status and statistics"""
+    try:
+        from app.models import PendingCompany
+        from app.utils.company_loader import count_companies
+        from app.config import settings
+        
+        # Get company counts
+        total_companies = await count_companies(db, active_only=False)
+        active_companies = await count_companies(db, active_only=True)
+        
+        # Get pending companies
+        pending_result = await db.execute(
+            select(func.count(PendingCompany.id)).where(PendingCompany.status == "pending")
+        )
+        pending_count = pending_result.scalar() or 0
+        
+        # Get recent pending companies
+        recent_pending_result = await db.execute(
+            select(PendingCompany)
+            .where(PendingCompany.status == "pending")
+            .order_by(desc(PendingCompany.created_at))
+            .limit(5)
+        )
+        recent_pending = recent_pending_result.scalars().all()
+        
+        return {
+            "total_companies": total_companies,
+            "active_companies": active_companies,
+            "target_companies": getattr(settings, "COMPANY_TARGET_COUNT", 4000),
+            "pending_count": pending_count,
+            "discovery_enabled": getattr(settings, "COMPANY_DISCOVERY_ENABLED", True),
+            "discovery_interval_hours": getattr(settings, "COMPANY_DISCOVERY_INTERVAL_HOURS", 6),
+            "auto_approve_threshold": getattr(settings, "COMPANY_AUTO_APPROVE_THRESHOLD", 70.0),
+            "recent_pending": [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "career_page_url": p.career_page_url,
+                    "discovery_source": p.discovery_source,
+                    "confidence_score": p.confidence_score,
+                    "created_at": p.created_at.isoformat()
+                }
+                for p in recent_pending
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting discovery status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting discovery status: {str(e)}")
+
+
+@router.get("/companies/pending")
+async def get_pending_companies(
+    limit: int = Query(100, description="Maximum number of pending companies to return"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all pending companies awaiting approval"""
+    try:
+        from app.models import PendingCompany
+        
+        result = await db.execute(
+            select(PendingCompany)
+            .where(PendingCompany.status == "pending")
+            .order_by(desc(PendingCompany.confidence_score))
+            .limit(limit)
+        )
+        pending_companies = result.scalars().all()
+        
+        return [
+            {
+                "id": p.id,
+                "name": p.name,
+                "career_page_url": p.career_page_url,
+                "discovery_source": p.discovery_source,
+                "confidence_score": p.confidence_score,
+                "crawler_type": p.crawler_type,
+                "crawler_config": p.crawler_config,
+                "discovery_metadata": p.discovery_metadata,
+                "created_at": p.created_at.isoformat(),
+                "updated_at": p.updated_at.isoformat()
+            }
+            for p in pending_companies
+        ]
+    except Exception as e:
+        logger.error(f"Error getting pending companies: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting pending companies: {str(e)}")
+
+
+@router.post("/companies/pending/{pending_id}/approve")
+async def approve_pending_company(
+    pending_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Approve a pending company and add it to the companies table"""
+    try:
+        from app.services.company_discovery_service import approve_pending_company
+        
+        result = await approve_pending_company(pending_id, db)
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Failed to approve company"))
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error approving pending company: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error approving pending company: {str(e)}")
+
+
+@router.post("/companies/pending/{pending_id}/reject")
+async def reject_pending_company(
+    pending_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Reject a pending company"""
+    try:
+        from app.services.company_discovery_service import reject_pending_company
+        
+        result = await reject_pending_company(pending_id, db)
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Failed to reject company"))
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rejecting pending company: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error rejecting pending company: {str(e)}")
+
+
+@router.post("/companies/{company_id}/analyze-viability")
+async def analyze_company_viability(
+    company_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Analyze viability of a single company"""
+    try:
+        from app.services.company_lifecycle import CompanyLifecycleManager
+        
+        lifecycle_manager = CompanyLifecycleManager()
+        result = await lifecycle_manager.analyze_single_company(company_id)
+        
+        if 'error' in result:
+            raise HTTPException(status_code=404, detail=result['error'])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing company: {str(e)}")
+
+
+
 @router.get("/companies/{company_id}")
 async def get_company(
     company_id: int,
@@ -742,163 +900,6 @@ async def run_company_discovery(
     except Exception as e:
         logger.error(f"Error running company discovery: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error running company discovery: {str(e)}")
-
-
-@router.get("/companies/discovery/status")
-async def get_discovery_status(
-    db: AsyncSession = Depends(get_db)
-):
-    """Get company discovery status and statistics"""
-    try:
-        from app.models import PendingCompany
-        from app.utils.company_loader import count_companies
-        from app.config import settings
-        
-        # Get company counts
-        total_companies = await count_companies(db, active_only=False)
-        active_companies = await count_companies(db, active_only=True)
-        
-        # Get pending companies
-        pending_result = await db.execute(
-            select(func.count(PendingCompany.id)).where(PendingCompany.status == "pending")
-        )
-        pending_count = pending_result.scalar() or 0
-        
-        # Get recent pending companies
-        recent_pending_result = await db.execute(
-            select(PendingCompany)
-            .where(PendingCompany.status == "pending")
-            .order_by(desc(PendingCompany.created_at))
-            .limit(5)
-        )
-        recent_pending = recent_pending_result.scalars().all()
-        
-        return {
-            "total_companies": total_companies,
-            "active_companies": active_companies,
-            "target_companies": getattr(settings, "COMPANY_TARGET_COUNT", 4000),
-            "pending_count": pending_count,
-            "discovery_enabled": getattr(settings, "COMPANY_DISCOVERY_ENABLED", True),
-            "discovery_interval_hours": getattr(settings, "COMPANY_DISCOVERY_INTERVAL_HOURS", 6),
-            "auto_approve_threshold": getattr(settings, "COMPANY_AUTO_APPROVE_THRESHOLD", 70.0),
-            "recent_pending": [
-                {
-                    "id": p.id,
-                    "name": p.name,
-                    "career_page_url": p.career_page_url,
-                    "discovery_source": p.discovery_source,
-                    "confidence_score": p.confidence_score,
-                    "created_at": p.created_at.isoformat()
-                }
-                for p in recent_pending
-            ]
-        }
-    except Exception as e:
-        logger.error(f"Error getting discovery status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error getting discovery status: {str(e)}")
-
-
-@router.get("/companies/pending")
-async def get_pending_companies(
-    limit: int = Query(100, description="Maximum number of pending companies to return"),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get all pending companies awaiting approval"""
-    try:
-        from app.models import PendingCompany
-        
-        result = await db.execute(
-            select(PendingCompany)
-            .where(PendingCompany.status == "pending")
-            .order_by(desc(PendingCompany.confidence_score))
-            .limit(limit)
-        )
-        pending_companies = result.scalars().all()
-        
-        return [
-            {
-                "id": p.id,
-                "name": p.name,
-                "career_page_url": p.career_page_url,
-                "discovery_source": p.discovery_source,
-                "confidence_score": p.confidence_score,
-                "crawler_type": p.crawler_type,
-                "crawler_config": p.crawler_config,
-                "discovery_metadata": p.discovery_metadata,
-                "created_at": p.created_at.isoformat(),
-                "updated_at": p.updated_at.isoformat()
-            }
-            for p in pending_companies
-        ]
-    except Exception as e:
-        logger.error(f"Error getting pending companies: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error getting pending companies: {str(e)}")
-
-
-@router.post("/companies/pending/{pending_id}/approve")
-async def approve_pending_company(
-    pending_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """Approve a pending company and add it to the companies table"""
-    try:
-        from app.services.company_discovery_service import approve_pending_company
-        
-        result = await approve_pending_company(pending_id, db)
-        
-        if not result.get("success"):
-            raise HTTPException(status_code=400, detail=result.get("error", "Failed to approve company"))
-        
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error approving pending company: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error approving pending company: {str(e)}")
-
-
-@router.post("/companies/pending/{pending_id}/reject")
-async def reject_pending_company(
-    pending_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """Reject a pending company"""
-    try:
-        from app.services.company_discovery_service import reject_pending_company
-        
-        result = await reject_pending_company(pending_id, db)
-        
-        if not result.get("success"):
-            raise HTTPException(status_code=400, detail=result.get("error", "Failed to reject company"))
-        
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error rejecting pending company: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error rejecting pending company: {str(e)}")
-
-
-@router.post("/companies/{company_id}/analyze-viability")
-async def analyze_company_viability(
-    company_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """Analyze viability of a single company"""
-    try:
-        from app.services.company_lifecycle import CompanyLifecycleManager
-        
-        lifecycle_manager = CompanyLifecycleManager()
-        result = await lifecycle_manager.analyze_single_company(company_id)
-        
-        if 'error' in result:
-            raise HTTPException(status_code=404, detail=result['error'])
-        
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error analyzing company: {str(e)}")
 
 
 @router.post("/automation/company-refresh")
