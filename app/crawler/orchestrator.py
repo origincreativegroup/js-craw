@@ -73,23 +73,31 @@ class CrawlerOrchestrator:
             self._current_company_index = 0
             self._current_company_name = None
 
-            async with AsyncSessionLocal() as db:
-                # Get all active companies
-                result = await db.execute(
+            # Fetch companies list with a temporary session
+            async with AsyncSessionLocal() as temp_db:
+                result = await temp_db.execute(
                     select(Company).where(Company.is_active == True)
                 )
-                companies = result.scalars().all()
-                self._total_companies = len(companies)
+                companies_orm = result.scalars().all()
+                self._total_companies = len(companies_orm)
+                # Expunge objects from session so they can be used after session closes
+                for company in companies_orm:
+                    temp_db.expunge(company)
+                companies = companies_orm
+            # Session closed - companies are now detached but still usable
 
-                logger.info(
-                    f"Crawling all {len(companies)} active companies (parallel, saving immediately, AI analysis in batch)"
-                )
+            logger.info(
+                f"Crawling all {len(companies)} active companies (parallel, each with own DB session)"
+            )
 
-                max_concurrent = getattr(settings, 'MAX_CONCURRENT_COMPANY_CRAWLS', 5)
-                semaphore = asyncio.Semaphore(max_concurrent)
+            max_concurrent = getattr(settings, 'MAX_CONCURRENT_COMPANY_CRAWLS', 5)
+            semaphore = asyncio.Semaphore(max_concurrent)
 
-                async def crawl_single(index: int, company: Company):
-                    async with semaphore:
+            async def crawl_single(index: int, company: Company):
+                logger.info(f"crawl_single called for {company.name}")
+                async with semaphore:
+                    # Each task gets its own database session - fixes race condition
+                    async with AsyncSessionLocal() as db:
                         self._current_company_index = index + 1
                         self._current_company_name = company.name
                         company_start = datetime.utcnow()
@@ -121,7 +129,7 @@ class CrawlerOrchestrator:
                                 async def _op():
                                     return await self.fallback_manager.crawl_with_fallback(company)
                                 jobs, method_used = await asyncio.wait_for(
-                                    policy.retry(lambda: policy.run(domain_key, _op)),
+                                    policy.retry_policy.retry(_op),
                                     timeout=timeout_seconds
                                 )
                                 logger.info(f"Found {len(jobs)} jobs from {company.name} (method: {method_used})")
@@ -212,8 +220,8 @@ class CrawlerOrchestrator:
                         finally:
                             await db.commit()
 
-                tasks = [crawl_single(idx, company) for idx, company in enumerate(companies)]
-                await asyncio.gather(*tasks)
+            tasks = [crawl_single(idx, company) for idx, company in enumerate(companies)]
+            await asyncio.gather(*tasks)
 
             if all_new_job_ids and not self._cancel_requested:
                 logger.info(f"Starting batch AI analysis on {len(all_new_job_ids)} new jobs...")

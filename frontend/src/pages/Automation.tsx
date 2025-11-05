@@ -1,71 +1,59 @@
 import { useEffect, useState } from 'react';
-import { 
-  Settings, 
-  Play, 
-  Pause, 
-  RefreshCw, 
-  Clock, 
-  Calendar, 
-  Zap, 
+import {
+  Play,
+  Pause,
+  Square,
+  Clock,
   Building2,
   CheckCircle,
-  AlertCircle,
   TrendingUp,
-  Activity
+  Search,
+  Briefcase
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
-import { 
-  getCrawlStatus, 
-  triggerCrawl, 
-  cancelCrawl,
-  getSearches,
-  getCompanies,
-  updateSchedulerInterval 
-} from '../services/api';
-import type { CrawlStatus, SearchCriteria, Company } from '../types';
-import { format } from 'date-fns';
+import { getCrawlStatus } from '../services/api';
+import type { CrawlStatus } from '../types';
 import './Automation.css';
+
+interface DiscoveryStatus {
+  total_companies: number;
+  active_companies: number;
+  target_companies: number;
+  pending_count: number;
+  discovery_enabled: boolean;
+  discovery_interval_hours: number;
+}
 
 const Automation = () => {
   const [crawlStatus, setCrawlStatus] = useState<CrawlStatus | null>(null);
+  const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
   const [schedulerStatus, setSchedulerStatus] = useState<any>(null);
-  const [searches, setSearches] = useState<SearchCriteria[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [intervalInput, setIntervalInput] = useState<string>('');
-  const [updatingInterval, setUpdatingInterval] = useState(false);
+  const [jobCrawlerAction, setJobCrawlerAction] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 5000); // Refresh every 5s
+    const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
   }, []);
 
   const loadData = async () => {
     try {
-      const [crawlData, searchesData, companiesData] = await Promise.all([
+      const [crawlData, discoveryData] = await Promise.all([
         getCrawlStatus(),
-        getSearches(),
-        getCompanies(true), // Only active companies
+        fetch('/api/companies/discovery/status').then(r => r.json()),
       ]);
       setCrawlStatus(crawlData);
-      setSearches(searchesData);
-      setCompanies(companiesData);
-      
-      // Try to get scheduler status (if endpoint exists)
+      setDiscoveryStatus(discoveryData);
+
       try {
         const response = await fetch('/api/automation/scheduler');
         if (response.ok) {
           const schedulerData = await response.json();
           setSchedulerStatus(schedulerData);
-          if (schedulerData.interval_minutes) {
-            setIntervalInput(schedulerData.interval_minutes.toString());
-          }
         }
       } catch (e) {
-        // Scheduler endpoint might not exist
         console.log('Scheduler endpoint not available');
       }
     } catch (error) {
@@ -75,92 +63,71 @@ const Automation = () => {
     }
   };
 
-  const handleTriggerCrawl = async (type: 'searches' | 'all') => {
-    setActionLoading(`crawl-${type}`);
+  const handleJobCrawlerStart = async () => {
+    setJobCrawlerAction('start');
     try {
-      await triggerCrawl(type);
+      const response = await fetch('/api/crawl/run?crawl_type=all', { method: 'POST' });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Failed to start job crawler (${response.status})`);
+      }
       setTimeout(() => loadData(), 1000);
-    } catch (error) {
-      console.error('Error triggering crawl:', error);
-      alert('Failed to trigger crawl. Please try again.');
+    } catch (error: any) {
+      console.error('Error starting job crawler:', error);
+      alert(error.message || 'Failed to start job crawler. Please try again.');
     } finally {
-      setActionLoading(null);
+      setJobCrawlerAction(null);
     }
   };
 
-  const handleCancelCrawl = async () => {
-    setActionLoading('cancel');
-    try {
-      await cancelCrawl();
-      setTimeout(() => loadData(), 1000);
-    } catch (error) {
-      console.error('Error cancelling crawl:', error);
-      alert('Failed to cancel crawl. Please try again.');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handlePauseScheduler = async () => {
-    setActionLoading('pause');
+  const handleJobCrawlerPause = async () => {
+    setJobCrawlerAction('pause');
     try {
       const response = await fetch('/api/automation/pause', { method: 'POST' });
-      if (response.ok) {
-        setTimeout(() => loadData(), 1000);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Failed to pause job crawler (${response.status})`);
       }
-    } catch (error) {
-      console.error('Error pausing scheduler:', error);
+      setTimeout(() => loadData(), 1000);
+    } catch (error: any) {
+      console.error('Error pausing job crawler:', error);
+      alert(error.message || 'Failed to pause job crawler. Please try again.');
     } finally {
-      setActionLoading(null);
+      setJobCrawlerAction(null);
     }
   };
 
-  const handleResumeScheduler = async () => {
-    setActionLoading('resume');
+  const handleJobCrawlerResume = async () => {
+    setJobCrawlerAction('resume');
     try {
       const response = await fetch('/api/automation/resume', { method: 'POST' });
-      if (response.ok) {
-        setTimeout(() => loadData(), 1000);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Failed to resume job crawler (${response.status})`);
       }
-    } catch (error) {
-      console.error('Error resuming scheduler:', error);
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const formatInterval = (minutes: number): string => {
-    if (minutes < 60) {
-      return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
-    } else if (minutes < 1440) {
-      const hours = Math.floor(minutes / 60);
-      const remainingMinutes = minutes % 60;
-      if (remainingMinutes === 0) {
-        return `${hours} hour${hours !== 1 ? 's' : ''}`;
-      }
-      return `${hours} hour${hours !== 1 ? 's' : ''} ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
-    } else {
-      return 'Once per day';
-    }
-  };
-
-  const handleUpdateInterval = async () => {
-    const minutes = parseInt(intervalInput, 10);
-    if (isNaN(minutes) || minutes < 30 || minutes > 1440) {
-      alert('Interval must be between 30 minutes and 1440 minutes (once per day)');
-      return;
-    }
-
-    setUpdatingInterval(true);
-    try {
-      await updateSchedulerInterval(minutes);
-      await loadData();
-      alert('Scheduler interval updated successfully!');
+      setTimeout(() => loadData(), 1000);
     } catch (error: any) {
-      console.error('Error updating interval:', error);
-      alert(error?.response?.data?.detail || 'Failed to update interval. Please try again.');
+      console.error('Error resuming job crawler:', error);
+      alert(error.message || 'Failed to resume job crawler. Please try again.');
     } finally {
-      setUpdatingInterval(false);
+      setJobCrawlerAction(null);
+    }
+  };
+
+  const handleJobCrawlerStop = async () => {
+    setJobCrawlerAction('stop');
+    try {
+      const response = await fetch('/api/crawl/cancel', { method: 'POST' });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Failed to stop job crawler (${response.status})`);
+      }
+      setTimeout(() => loadData(), 1000);
+    } catch (error: any) {
+      console.error('Error stopping job crawler:', error);
+      alert(error.message || 'Failed to stop job crawler. Please try again.');
+    } finally {
+      setJobCrawlerAction(null);
     }
   };
 
@@ -168,8 +135,8 @@ const Automation = () => {
     return <div className="loading">Loading automation settings...</div>;
   }
 
-  const activeSearches = searches.filter(s => s.is_active).length;
-  const crawlerHealth = crawlStatus?.crawler_health || {};
+  const isPaused = schedulerStatus?.is_paused || false;
+  const isJobCrawlerRunning = crawlStatus?.is_running || false;
 
   return (
     <div className="automation-page">
@@ -177,46 +144,35 @@ const Automation = () => {
         <div>
           <h1 className="page-title">Automation & Control</h1>
           <p className="page-subtitle">
-            Manage automated crawling of companies and jobs - schedules, triggers, and system automation
+            Control job crawling and company discovery - start, pause, or stop crawlers independently
           </p>
-        </div>
-        <div className="automation-badge">
-          <Settings size={20} />
-          <span>System Control</span>
         </div>
       </div>
 
       <div className="automation-grid">
-        {/* Crawl Status Card */}
         <Card className="automation-card crawl-status-card">
           <div className="card-header">
             <div className="card-header-content">
-              <Activity size={24} className="card-icon" />
+              <Briefcase size={24} className="card-icon" style={{ color: '#8b5cf6' }} />
               <div>
-                <h2 className="card-title">Crawl Status</h2>
-                <p className="card-subtitle">
-                  {crawlStatus?.run_type === 'all_companies' 
-                    ? 'Crawling all companies for new jobs' 
-                    : crawlStatus?.run_type === 'search'
-                    ? 'Crawling companies from search criteria'
-                    : 'Crawling company career pages for new jobs'}
-                </p>
+                <h2 className="card-title">Job Crawler</h2>
+                <p className="card-subtitle">Crawl company career pages for new job postings</p>
               </div>
             </div>
-            <div className={`status-indicator ${crawlStatus?.is_running ? 'running' : 'idle'}`}>
+            <div className={`status-indicator ${isJobCrawlerRunning ? 'running' : isPaused ? 'paused' : 'idle'}`}>
               <span className="status-dot"></span>
-              {crawlStatus?.is_running ? 'Running' : 'Idle'}
+              {isJobCrawlerRunning ? 'Running' : isPaused ? 'Paused' : 'Idle'}
             </div>
           </div>
 
           <div className="crawl-info">
-            {crawlStatus?.is_running ? (
+            {isJobCrawlerRunning && crawlStatus ? (
               <>
                 <div className="crawl-progress">
                   <div className="progress-header">
                     <span>Progress</span>
                     <span className="progress-text">
-                      {crawlStatus.progress.current} / {crawlStatus.progress.total} companies crawled
+                      {crawlStatus.progress.current} / {crawlStatus.progress.total} companies
                     </span>
                   </div>
                   <div className="progress-bar">
@@ -231,7 +187,7 @@ const Automation = () => {
                 {crawlStatus.current_company && (
                   <div className="current-company">
                     <Building2 size={16} />
-                    <span>Currently crawling jobs from: <strong>{crawlStatus.current_company}</strong></span>
+                    <span>Currently crawling: <strong>{crawlStatus.current_company}</strong></span>
                   </div>
                 )}
                 {crawlStatus.eta_seconds && (
@@ -240,43 +196,67 @@ const Automation = () => {
                     <span>ETA: {Math.round(crawlStatus.eta_seconds / 60)} minutes</span>
                   </div>
                 )}
-                <div className="crawl-actions">
+                <div className="crawl-actions" style={{ marginTop: '20px' }}>
                   <Button
                     variant="danger"
                     size="md"
-                    icon={<Pause size={16} />}
-                    onClick={handleCancelCrawl}
-                    loading={actionLoading === 'cancel'}
+                    icon={<Square size={16} />}
+                    onClick={handleJobCrawlerStop}
+                    loading={jobCrawlerAction === 'stop'}
                   >
-                    Cancel Crawl
+                    Stop
                   </Button>
                 </div>
               </>
+            ) : isPaused ? (
+              <div className="paused-state">
+                <div className="idle-message">
+                  <Pause size={48} style={{ color: '#f59e0b' }} />
+                  <h3>Job crawler is paused</h3>
+                  <p>Resume to continue scheduled crawling</p>
+                </div>
+                <div className="crawl-actions">
+                  <Button
+                    variant="success"
+                    size="md"
+                    icon={<Play size={16} />}
+                    onClick={handleJobCrawlerResume}
+                    loading={jobCrawlerAction === 'resume'}
+                  >
+                    Resume
+                  </Button>
+                </div>
+              </div>
             ) : (
               <div className="idle-state">
                 <div className="idle-message">
-                  <CheckCircle size={48} />
-                  <h3>Crawler is idle</h3>
-                  <p>No active crawling operations</p>
+                  <CheckCircle size={48} style={{ color: '#10b981' }} />
+                  <h3>Job crawler is idle</h3>
+                  <p>Start crawling {discoveryStatus?.active_companies || 0} active companies</p>
+                  {schedulerStatus && (
+                    <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                      Scheduled: Every {schedulerStatus.interval_minutes} minutes
+                    </p>
+                  )}
                 </div>
                 <div className="crawl-actions">
                   <Button
                     variant="primary"
                     size="md"
                     icon={<Play size={16} />}
-                    onClick={() => handleTriggerCrawl('searches')}
-                    loading={actionLoading === 'crawl-searches'}
+                    onClick={handleJobCrawlerStart}
+                    loading={jobCrawlerAction === 'start'}
                   >
-                    Run Searches
+                    Start Crawling
                   </Button>
                   <Button
-                    variant="secondary"
+                    variant="warning"
                     size="md"
-                    icon={<RefreshCw size={16} />}
-                    onClick={() => handleTriggerCrawl('all')}
-                    loading={actionLoading === 'crawl-all'}
+                    icon={<Pause size={16} />}
+                    onClick={handleJobCrawlerPause}
+                    loading={jobCrawlerAction === 'pause'}
                   >
-                    Crawl All Companies
+                    Pause Scheduler
                   </Button>
                 </div>
               </div>
@@ -284,118 +264,80 @@ const Automation = () => {
           </div>
         </Card>
 
-        {/* Scheduler Card */}
-        <Card className="automation-card scheduler-card">
+        <Card className="automation-card discovery-card">
           <div className="card-header">
             <div className="card-header-content">
-              <Calendar size={24} className="card-icon" />
+              <Search size={24} className="card-icon" style={{ color: '#ec4899' }} />
               <div>
-                <h2 className="card-title">Scheduler</h2>
-                <p className="card-subtitle">Automated crawl schedule</p>
+                <h2 className="card-title">Company Discovery</h2>
+                <p className="card-subtitle">Discover new companies via LinkedIn, Indeed, and web search</p>
               </div>
+            </div>
+            <div className={`status-indicator ${discoveryStatus?.discovery_enabled ? 'idle' : 'disabled'}`}>
+              <span className="status-dot"></span>
+              {discoveryStatus?.discovery_enabled ? 'Enabled' : 'Disabled'}
             </div>
           </div>
 
-          <div className="scheduler-info">
-            {schedulerStatus ? (
-              <>
-                <div className="scheduler-status">
-                  <div className={`status-badge ${schedulerStatus.status === 'running' ? 'active' : 'inactive'}`}>
-                    {schedulerStatus.status === 'running' ? (
-                      <CheckCircle size={16} />
-                    ) : (
-                      <AlertCircle size={16} />
-                    )}
-                    <span>{schedulerStatus.status === 'running' ? 'Active' : 'Stopped'}</span>
-                  </div>
-                  {schedulerStatus.next_run && (
-                    <div className="next-run">
-                      <Clock size={16} />
-                      <span>
-                        Next run: {format(new Date(schedulerStatus.next_run), 'MMM d, h:mm a')}
-                      </span>
-                    </div>
-                  )}
-                  {schedulerStatus.interval_minutes && (
-                    <div className="interval">
-                      <span>Interval: Every {formatInterval(schedulerStatus.interval_minutes)}</span>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="interval-controls" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
-                  <div style={{ marginBottom: '12px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: 'var(--text-primary)' }}>
-                      Set Crawl Interval
-                    </label>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <input
-                        type="number"
-                        min="30"
-                        max="1440"
-                        value={intervalInput}
-                        onChange={(e) => setIntervalInput(e.target.value)}
-                        placeholder={schedulerStatus?.interval_minutes?.toString() || '30'}
-                        style={{
-                          padding: '8px 12px',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '6px',
-                          fontSize: '14px',
-                          width: '120px',
-                          backgroundColor: 'var(--bg-primary)',
-                          color: 'var(--text-primary)'
-                        }}
-                      />
-                      <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>minutes</span>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={handleUpdateInterval}
-                        loading={updatingInterval}
-                      >
-                        Update
-                      </Button>
-                    </div>
-                    <small style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                      Range: 30 minutes - 1440 minutes (once per day)
-                    </small>
-                  </div>
-                </div>
-
-                <div className="scheduler-actions" style={{ marginTop: '16px' }}>
-                  {schedulerStatus.is_paused ? (
-                    <Button
-                      variant="success"
-                      size="md"
-                      icon={<Play size={16} />}
-                      onClick={handleResumeScheduler}
-                      loading={actionLoading === 'resume'}
-                    >
-                      Resume
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="warning"
-                      size="md"
-                      icon={<Pause size={16} />}
-                      onClick={handlePauseScheduler}
-                      loading={actionLoading === 'pause'}
-                    >
-                      Pause
-                    </Button>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="scheduler-unavailable">
-                <AlertCircle size={24} />
-                <p>Scheduler information not available</p>
+          <div className="discovery-info">
+            <div className="stats-grid" style={{ marginBottom: '20px' }}>
+              <div className="stat-item">
+                <div className="stat-value">{discoveryStatus?.total_companies || 0}</div>
+                <div className="stat-label">Total Companies</div>
               </div>
+              <div className="stat-item">
+                <div className="stat-value">{discoveryStatus?.active_companies || 0}</div>
+                <div className="stat-label">Active Companies</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-value">{discoveryStatus?.pending_count || 0}</div>
+                <div className="stat-label">Pending Approval</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-value">{discoveryStatus?.target_companies || 0}</div>
+                <div className="stat-label">Target</div>
+              </div>
+            </div>
+
+            <div className="progress-section" style={{ marginBottom: '20px' }}>
+              <div className="progress-header">
+                <span>Discovery Progress</span>
+                <span className="progress-text">
+                  {discoveryStatus?.total_companies || 0} / {discoveryStatus?.target_companies || 0}
+                  ({Math.round(((discoveryStatus?.total_companies || 0) / (discoveryStatus?.target_companies || 1)) * 100)}%)
+                </span>
+              </div>
+              <div className="progress-bar">
+                <div
+                  className="progress-fill"
+                  style={{
+                    width: `${Math.min(100, ((discoveryStatus?.total_companies || 0) / (discoveryStatus?.target_companies || 1)) * 100)}%`,
+                    background: 'linear-gradient(90deg, #ec4899, #8b5cf6)'
+                  }}
+                />
+              </div>
+            </div>
+
+            {discoveryStatus?.discovery_enabled && (
+              <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                <Clock size={14} style={{ display: 'inline', marginRight: '4px' }} />
+                Runs automatically every {discoveryStatus.discovery_interval_hours} hours
+              </p>
             )}
+
+            <div className="discovery-actions">
+              <Button
+                variant="secondary"
+                size="md"
+                icon={<Building2 size={16} />}
+                onClick={() => window.location.href = '/discover'}
+              >
+                View Pending Companies
+              </Button>
+            </div>
           </div>
         </Card>
 
-        {/* System Stats */}
         <Card className="automation-card stats-card">
           <div className="card-header">
             <div className="card-header-content">
@@ -409,97 +351,48 @@ const Automation = () => {
 
           <div className="stats-grid">
             <div className="stat-item">
-              <div className="stat-value">{activeSearches}</div>
-              <div className="stat-label">Active Searches</div>
-            </div>
-            <div className="stat-item">
-              <div className="stat-value">{companies.length}</div>
+              <div className="stat-value">{discoveryStatus?.active_companies || 0}</div>
               <div className="stat-label">Active Companies</div>
             </div>
             <div className="stat-item">
-              <div className="stat-value">{crawlStatus?.queue_length || 0}</div>
-              <div className="stat-label">Queue Length</div>
+              <div className="stat-value">{crawlStatus?.active_companies || 0}</div>
+              <div className="stat-label">In Job Crawler</div>
             </div>
             <div className="stat-item">
-              <div className="stat-value">{crawlStatus?.running_count || 0}</div>
-              <div className="stat-label">Running Crawls</div>
+              <div className="stat-value">{discoveryStatus?.pending_count || 0}</div>
+              <div className="stat-label">Awaiting Approval</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-value">
+                {schedulerStatus?.interval_minutes ? `${schedulerStatus.interval_minutes}m` : 'N/A'}
+              </div>
+              <div className="stat-label">Crawl Interval</div>
             </div>
           </div>
-          
-          {companies.length > 0 && (
-            <div className="companies-list" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
+
+          {crawlStatus?.recent_logs && crawlStatus.recent_logs.length > 0 && (
+            <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
               <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px', color: 'var(--text-primary)' }}>
-                Active Companies ({companies.length})
+                Recent Activity
               </h3>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
-                {companies.map((company) => (
-                  <div 
-                    key={company.id} 
-                    style={{
-                      padding: '6px 12px',
-                      backgroundColor: 'var(--bg-secondary)',
-                      borderRadius: '6px',
-                      fontSize: '12px',
-                      border: '1px solid var(--border-color)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <Building2 size={14} />
-                    <span>{company.name}</span>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {crawlStatus.recent_logs.slice(0, 3).map((log, idx) => (
+                  <div key={idx} style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className={`status-indicator ${log.status === 'completed' ? 'success' : log.status === 'failed' ? 'danger' : 'running'}`} style={{ fontSize: '10px' }}>
+                      <span className="status-dot" style={{ width: '6px', height: '6px' }}></span>
+                    </div>
+                    <span>
+                      {log.company_name || `Company #${log.company_id}`} - {log.status} ({log.jobs_found || 0} jobs)
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
           )}
         </Card>
-
-        {/* Crawler Health */}
-        {Object.keys(crawlerHealth).length > 0 && (
-          <Card className="automation-card health-card">
-            <div className="card-header">
-              <div className="card-header-content">
-                <Zap size={24} className="card-icon" />
-                <div>
-                  <h2 className="card-title">Crawler Health</h2>
-                  <p className="card-subtitle">Performance metrics</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="health-metrics">
-              {Object.entries(crawlerHealth).map(([type, health]) => (
-                <div key={type} className="health-item">
-                  <div className="health-header">
-                    <span className="health-type">{type}</span>
-                    <span className={`health-status ${health.success_rate >= 80 ? 'good' : health.success_rate >= 50 ? 'warning' : 'bad'}`}>
-                      {health.success_rate.toFixed(1)}% success
-                    </span>
-                  </div>
-                  <div className="health-details">
-                    <div className="health-detail">
-                      <span>Avg Duration:</span>
-                      <span>{health.avg_duration_seconds.toFixed(1)}s</span>
-                    </div>
-                    <div className="health-detail">
-                      <span>Total Runs:</span>
-                      <span>{health.total_runs}</span>
-                    </div>
-                    <div className="health-detail">
-                      <span>Errors:</span>
-                      <span>{health.error_count}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
       </div>
     </div>
   );
 };
 
 export default Automation;
-
