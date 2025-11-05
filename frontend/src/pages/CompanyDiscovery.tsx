@@ -259,7 +259,7 @@ const CompanyDiscovery = () => {
                     onClick={() => handleReject(company.id)}
                     disabled={processing === company.id}
                     className="secondary danger"
-                    small
+                    size="sm"
                   >
                     <XCircle size={16} />
                     Reject
@@ -268,7 +268,7 @@ const CompanyDiscovery = () => {
                     onClick={() => handleApprove(company.id)}
                     disabled={processing === company.id}
                     className="primary"
-                    small
+                    size="sm"
                   >
                     {processing === company.id ? (
                       <RefreshCw size={16} className="spinning" />
