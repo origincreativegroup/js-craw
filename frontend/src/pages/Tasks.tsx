@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CheckSquare, Sparkles, Clock, AlertCircle, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { CheckSquare, Sparkles, Clock, AlertCircle, Plus, FileText, ArrowRight } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { getTasks, getTaskRecommendations, completeTask, generateTasksFromJob } from '../services/api';
@@ -8,6 +9,7 @@ import { format, parseISO, isPast } from 'date-fns';
 import './Tasks.css';
 
 const Tasks = () => {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [recommendations, setRecommendations] = useState<TaskRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -212,8 +214,8 @@ const Tasks = () => {
                 <p className="task-notes">{task.notes}</p>
               )}
 
-              {task.status === 'pending' && (
-                <div className="task-actions">
+              <div className="task-actions">
+                {task.status === 'pending' && (
                   <Button
                     variant="success"
                     size="sm"
@@ -222,8 +224,28 @@ const Tasks = () => {
                   >
                     Complete
                   </Button>
-                </div>
-              )}
+                )}
+                {task.task_type === 'follow_up' && task.job && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={<FileText size={16} />}
+                    onClick={() => navigate('/apply')}
+                  >
+                    View Application
+                  </Button>
+                )}
+                {task.job && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<ArrowRight size={16} />}
+                    onClick={() => navigate(`/jobs`)}
+                  >
+                    View Job
+                  </Button>
+                )}
+              </div>
             </Card>
           ))
         )}

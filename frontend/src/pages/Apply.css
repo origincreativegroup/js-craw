@@ -329,6 +329,15 @@
   min-height: 80px;
 }
 
+.action-links {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
 .job-link {
   display: flex;
   justify-content: flex-end;

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   FileText, 
   CheckCircle2, 
@@ -11,6 +12,8 @@ import {
   Download,
   FileCheck,
   ArrowRight,
+  CheckSquare,
+  Calendar,
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -39,6 +42,7 @@ const STATUS_STEPS: { value: ApplicationStatus; label: string; icon: any }[] = [
 const STATUS_ORDER: ApplicationStatus[] = ['queued', 'drafting', 'submitted', 'interviewing', 'rejected', 'accepted'];
 
 const Apply = () => {
+  const navigate = useNavigate();
   const [applications, setApplications] = useState<(Application & { job?: Job })[]>([]);
   const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<Record<number, GeneratedDocument[]>>({});
@@ -432,9 +436,9 @@ const Apply = () => {
                       </div>
                     </div>
 
-                    {/* Job Details Link */}
-                    {app.job?.url && (
-                      <div className="job-link">
+                    {/* Action Links */}
+                    <div className="action-links">
+                      {app.job?.url && (
                         <Button
                           variant="secondary"
                           size="md"
@@ -443,8 +447,28 @@ const Apply = () => {
                         >
                           View Job Posting
                         </Button>
-                      </div>
-                    )}
+                      )}
+                      {app.status === 'submitted' && (
+                        <>
+                          <Button
+                            variant="secondary"
+                            size="md"
+                            icon={<CheckSquare size={16} />}
+                            onClick={() => navigate('/tasks')}
+                          >
+                            View Follow-up Task
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            size="md"
+                            icon={<Calendar size={16} />}
+                            onClick={() => navigate('/follow-ups')}
+                          >
+                            Manage Follow-ups
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </Card>

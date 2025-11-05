@@ -252,34 +252,92 @@ class DocumentGenerator:
         education = user_profile.education or []
         base_resume = user_profile.base_resume or ""
 
-        prompt = f"""You are a professional resume writer. Create a tailored resume for the following job application.
+        # Extract key requirements from job description
+        job_keywords = []
+        if job.description:
+            # Look for common requirement patterns
+            desc_lower = job.description.lower()
+            common_tech = ['python', 'javascript', 'react', 'node', 'sql', 'aws', 'docker', 'kubernetes', 'git', 'linux']
+            for tech in common_tech:
+                if tech in desc_lower:
+                    job_keywords.append(tech)
+        
+        # Extract years of experience if mentioned
+        experience_years = None
+        if job.description:
+            import re
+            exp_match = re.search(r'(\d+)\+?\s*(years?|yrs?)\s*(of\s*)?(experience|exp)', job.description, re.IGNORECASE)
+            if exp_match:
+                experience_years = exp_match.group(1)
 
-JOB DETAILS:
-- Position: {job.title}
-- Company: {job.company}
-- Location: {job.location or 'Not specified'}
-- Job Description: {job.description[:2000] if job.description else 'Not available'}
+        prompt = f"""You are an expert resume writer specializing in ATS-optimized resumes. Create a tailored, professional resume for this specific job application.
 
-CANDIDATE PROFILE:
-Skills: {', '.join(skills) if skills else 'General skills'}
-Education: {json.dumps(education) if education else 'To be specified'}
+═══════════════════════════════════════════════════════════════
+JOB TARGET
+═══════════════════════════════════════════════════════════════
+Position: {job.title}
+Company: {job.company}
+Location: {job.location or 'Not specified'}
+Key Requirements: {', '.join(job_keywords[:10]) if job_keywords else 'See full description'}
+Experience Required: {f"{experience_years}+ years" if experience_years else "See description"}
+
+Job Description (excerpt):
+{job.description[:2500] if job.description else 'Not available'}
+{'...' if job.description and len(job.description) > 2500 else ''}
+
+═══════════════════════════════════════════════════════════════
+CANDIDATE PROFILE
+═══════════════════════════════════════════════════════════════
+Skills: {', '.join(skills) if skills else 'General professional skills'}
+
+Education:
+{json.dumps(education, indent=2) if education else 'To be specified'}
 
 Work Experience:
 {json.dumps(experience, indent=2) if experience else 'To be specified'}
 
-Base Resume:
-{base_resume[:1000] if base_resume else 'Create a professional resume structure'}
+Base Resume (reference):
+{base_resume[:1500] if base_resume else 'Create a professional resume structure'}
 
-INSTRUCTIONS:
-1. Tailor the resume specifically for this {job.title} position at {job.company}
-2. Highlight skills and experience most relevant to the job requirements
-3. Use action verbs and quantifiable achievements
-4. Keep it concise (1-2 pages worth of content)
-5. Format in clean, professional plain text (use markdown if needed)
-6. Include relevant sections: Summary, Skills, Experience, Education
-7. Emphasize how the candidate's background matches the job requirements
+═══════════════════════════════════════════════════════════════
+RESUME GENERATION REQUIREMENTS
+═══════════════════════════════════════════════════════════════
+1. TARGETED TAILORING:
+   - Match keywords from the job description naturally throughout the resume
+   - Prioritize experiences and skills most relevant to {job.title} at {job.company}
+   - Use industry-specific terminology from the job posting
 
-Generate a professional, ATS-friendly resume:"""
+2. ATS OPTIMIZATION:
+   - Use standard section headers: Professional Summary, Skills, Experience, Education
+   - Include relevant keywords from the job description
+   - Use clean, parseable formatting
+   - Avoid graphics, tables, or complex formatting
+
+3. CONTENT QUALITY:
+   - Start each bullet point with strong action verbs (Led, Developed, Implemented, etc.)
+   - Include quantifiable achievements (numbers, percentages, scale)
+   - Show progression and impact in each role
+   - Keep professional summary to 3-4 lines highlighting top qualifications
+
+4. STRUCTURE:
+   - Professional Summary (3-4 lines)
+   - Core Skills/Technical Skills section (relevant to job)
+   - Professional Experience (reverse chronological, most relevant first)
+   - Education
+   - Optional: Certifications, Projects (if highly relevant)
+
+5. LENGTH:
+   - Target 1-2 pages of content
+   - Be concise but comprehensive
+   - Every line should add value and relevance
+
+6. FORMATTING:
+   - Use clear section headers
+   - Consistent date formatting (MM/YYYY - MM/YYYY)
+   - Clean, professional presentation
+   - Use markdown for formatting if needed
+
+Generate a professional, ATS-optimized resume tailored specifically for the {job.title} position at {job.company}:"""
 
         return prompt
 
@@ -291,41 +349,97 @@ Generate a professional, ATS-friendly resume:"""
 
         # Extract key highlights from experience
         experience_highlights = []
+        achievements = []
         for exp in experience[:3]:  # Top 3 experiences
             if isinstance(exp, dict):
                 title = exp.get('title', '')
                 company = exp.get('company', '')
+                description = exp.get('description', '')
                 if title and company:
                     experience_highlights.append(f"{title} at {company}")
+                if description:
+                    achievements.append(description[:200])
 
-        prompt = f"""You are a professional career coach writing a compelling cover letter. Create a tailored cover letter for the following job application.
+        # Extract company name for personalization
+        company_name = job.company
+        recruiter_greeting = f"Dear Hiring Manager"  # Could be enhanced with name detection
 
-JOB DETAILS:
-- Position: {job.title}
-- Company: {job.company}
-- Location: {job.location or 'Not specified'}
-- Job Description: {job.description[:2000] if job.description else 'Not available'}
+        prompt = f"""You are an expert career coach and cover letter writer. Create a compelling, personalized cover letter that stands out.
 
-CANDIDATE BACKGROUND:
-Key Skills: {', '.join(skills[:10]) if skills else 'Professional skills'}
-Recent Experience: {', '.join(experience_highlights) if experience_highlights else 'Professional experience'}
+═══════════════════════════════════════════════════════════════
+JOB TARGET
+═══════════════════════════════════════════════════════════════
+Position: {job.title}
+Company: {company_name}
+Location: {job.location or 'Not specified'}
 
-INSTRUCTIONS:
-1. Write a compelling cover letter specifically for {job.title} at {job.company}
-2. Show enthusiasm for the company and role
-3. Highlight 2-3 key qualifications that match the job requirements
-4. Explain why the candidate is interested in this specific opportunity
-5. Keep it concise (3-4 paragraphs, about 250-350 words)
-6. Use a professional yet personable tone
-7. Include a strong opening and closing
-8. Format in clean, professional plain text
+Job Description:
+{job.description[:2500] if job.description else 'Not available'}
+{'...' if job.description and len(job.description) > 2500 else ''}
 
-Structure:
-- Opening paragraph: Express interest and mention the position
-- Body paragraphs: Highlight relevant qualifications and achievements
-- Closing paragraph: Express enthusiasm and call to action
+═══════════════════════════════════════════════════════════════
+CANDIDATE BACKGROUND
+═══════════════════════════════════════════════════════════════
+Key Skills: {', '.join(skills[:15]) if skills else 'Professional skills'}
+Relevant Experience: {', '.join(experience_highlights) if experience_highlights else 'Professional experience'}
+Key Achievements: {'; '.join(achievements[:3]) if achievements else 'See experience'}
 
-Generate a professional cover letter:"""
+═══════════════════════════════════════════════════════════════
+COVER LETTER REQUIREMENTS
+═══════════════════════════════════════════════════════════════
+1. OPENING (First Paragraph):
+   - Start with enthusiasm and specific mention of the {job.title} position
+   - Reference where you learned about the opportunity (if applicable)
+   - State why you're excited about this specific role at {company_name}
+   - Make it memorable and personal, not generic
+
+2. BODY (2-3 Paragraphs):
+   - Paragraph 1: Highlight 2-3 most relevant qualifications
+     * Match specific requirements from the job description
+     * Use concrete examples from experience
+     * Show how your background aligns with their needs
+   
+   - Paragraph 2: Demonstrate value and fit
+     * Share a specific achievement or project that relates to the role
+     * Show understanding of the company/role challenges
+     * Connect your experience to what they're looking for
+   
+   - Optional Paragraph 3: Cultural fit and motivation
+     * Why you're interested in {company_name} specifically
+     * What you can contribute to their team
+     * Long-term alignment with company goals
+
+3. CLOSING (Final Paragraph):
+   - Reiterate enthusiasm for the position
+   - Express confidence in being a strong fit
+   - Professional call to action
+   - Thank them for consideration
+
+4. TONE & STYLE:
+   - Professional yet personable and authentic
+   - Confident but not arrogant
+   - Enthusiastic but not overly casual
+   - Specific to this role, not generic
+   - Show personality while remaining professional
+
+5. LENGTH:
+   - Target: 250-400 words (3-4 paragraphs)
+   - Be concise but comprehensive
+   - Every sentence should add value
+
+6. FORMATTING:
+   - Professional business letter format
+   - Include date, greeting, body, closing, signature line
+   - Clean, readable formatting
+   - Use proper paragraph breaks
+
+7. PERSONALIZATION:
+   - Reference specific aspects of the job description
+   - Mention company name naturally (not overused)
+   - Show you've researched and understand the role
+   - Connect your experience to their specific needs
+
+Generate a compelling, personalized cover letter for the {job.title} position at {company_name}:"""
 
         return prompt
 

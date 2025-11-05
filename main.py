@@ -94,6 +94,17 @@ async def lifespan(app: FastAPI):
         replace_existing=True
     )
     
+    # Schedule search-based crawler to run continuously
+    search_interval_minutes = getattr(settings, 'SEARCH_CRAWL_INTERVAL_MINUTES', settings.CRAWL_INTERVAL_MINUTES)
+    scheduler.add_job(
+        orchestrator.run_all_searches,
+        trigger=IntervalTrigger(minutes=search_interval_minutes),
+        id="run_all_searches",
+        name="Run all active searches",
+        replace_existing=True
+    )
+    logger.info(f"Scheduled search-based crawler to run every {search_interval_minutes} minutes")
+    
     # Daily company refresh workflow
     async def refresh_company_list_daily():
         """Daily company refresh workflow"""
@@ -310,6 +321,7 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     logger.info(f"Scheduler started:")
     logger.info(f"  - Crawling all companies every {settings.CRAWL_INTERVAL_MINUTES} minutes")
+    logger.info(f"  - Running all searches every {getattr(settings, 'SEARCH_CRAWL_INTERVAL_MINUTES', settings.CRAWL_INTERVAL_MINUTES)} minutes")
     logger.info(f"  - Refreshing company list daily at 2:00 AM")
     logger.info(f"  - Daily AI selection/doc generation at {getattr(settings, 'DAILY_GENERATION_TIME', '15:00')}")
     logger.info(f"  - Checking task reminders every {settings.TASK_REMINDER_CHECK_INTERVAL_MINUTES} minutes")

@@ -32,11 +32,13 @@ class IndeedCrawler:
         query: str,
         *,
         location: Optional[str] = None,
-        max_pages: int = 2,
+        max_pages: int = 5,  # Increased default from 2 to 5
         results_per_page: int = 20,
         freshness_days: Optional[int] = None,
         remote_only: bool = False,
         company_name: str = "Indeed Search",
+        fetch_full_descriptions: bool = True,  # New: fetch full job descriptions
+        adaptive_pagination: bool = True,  # New: stop when no new jobs found
     ) -> None:
         """Configure the crawler.
 
@@ -48,6 +50,8 @@ class IndeedCrawler:
             freshness_days: Restrict results to postings within the last N days.
             remote_only: If True, ask Indeed for "remote" results where supported.
             company_name: Human readable label stored on each normalized job.
+            fetch_full_descriptions: Whether to fetch full job descriptions from detail pages.
+            adaptive_pagination: Whether to stop pagination when no new jobs are found.
         """
 
         self.query = query
@@ -57,9 +61,11 @@ class IndeedCrawler:
         self.freshness_days = freshness_days
         self.remote_only = remote_only
         self.company_name = company_name or "Indeed Search"
+        self.fetch_full_descriptions = fetch_full_descriptions
+        self.adaptive_pagination = adaptive_pagination
 
     async def fetch_jobs(self) -> List[Dict]:
-        """Fetch and normalize jobs from Indeed."""
+        """Fetch and normalize jobs from Indeed with enhanced pagination and descriptions."""
 
         params = {
             "q": self.query,
@@ -78,7 +84,10 @@ class IndeedCrawler:
         jobs: List[Dict] = []
         seen_ids: set[str] = set()
 
-        async with httpx.AsyncClient(timeout=30.0, headers=self._headers(), follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=60.0, headers=self._headers(), follow_redirects=True) as client:
+            consecutive_empty_pages = 0
+            max_empty_pages = 2  # Stop after 2 consecutive empty pages
+            
             for page in range(self.max_pages):
                 start = page * self.results_per_page
                 page_params = {**params, "start": str(start)}
@@ -92,12 +101,24 @@ class IndeedCrawler:
                     if exc.response.status_code == 404:
                         logger.warning("Indeed search returned 404 for %s", url)
                         break
+                    if exc.response.status_code in [429, 503]:
+                        # Rate limited or service unavailable - wait longer
+                        logger.warning(f"Indeed returned {exc.response.status_code}, waiting longer...")
+                        await asyncio.sleep(5)
+                        continue
                     raise
 
                 page_jobs = self._parse_jobs(response.text)
                 if not page_jobs:
                     logger.info("No jobs detected on Indeed page %s", page + 1)
-                    break
+                    consecutive_empty_pages += 1
+                    if self.adaptive_pagination and consecutive_empty_pages >= max_empty_pages:
+                        logger.info("Adaptive pagination: stopping after %s consecutive empty pages", consecutive_empty_pages)
+                        break
+                    await asyncio.sleep(1)
+                    continue
+                
+                consecutive_empty_pages = 0  # Reset counter
 
                 new_jobs = 0
                 for job in page_jobs:
@@ -105,14 +126,30 @@ class IndeedCrawler:
                     if not job_id or job_id in seen_ids:
                         continue
                     seen_ids.add(job_id)
+                    
+                    # Fetch full description if enabled
+                    if self.fetch_full_descriptions and job.get("url"):
+                        try:
+                            full_description = await self._fetch_full_description(client, job["url"])
+                            if full_description:
+                                job["description"] = full_description
+                        except Exception as e:
+                            logger.debug(f"Could not fetch full description for job {job_id}: {e}")
+                    
                     jobs.append(job)
                     new_jobs += 1
 
-                logger.info("Indeed page %s yielded %s new jobs", page + 1, new_jobs)
+                logger.info("Indeed page %s yielded %s new jobs (total: %s)", page + 1, new_jobs, len(jobs))
+                
+                # Adaptive pagination: stop if no new jobs found
+                if self.adaptive_pagination and new_jobs == 0:
+                    logger.info("Adaptive pagination: no new jobs on page %s, stopping", page + 1)
+                    break
 
                 # Polite pause between requests to reduce the likelihood of throttling.
-                await asyncio.sleep(1)
+                await asyncio.sleep(1.5)  # Slightly longer delay to be more polite
 
+        logger.info("Indeed crawl complete: found %s total jobs", len(jobs))
         return jobs
 
     def _parse_jobs(self, html: str) -> List[Dict]:
@@ -220,6 +257,46 @@ class IndeedCrawler:
             ),
             "Accept-Language": "en-US,en;q=0.9",
         }
+
+    async def _fetch_full_description(self, client: httpx.AsyncClient, job_url: str) -> Optional[str]:
+        """Fetch full job description from Indeed job detail page."""
+        try:
+            response = await client.get(job_url, timeout=20.0)
+            if response.status_code != 200:
+                return None
+            
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            # Indeed uses several possible selectors for job descriptions
+            description_selectors = [
+                "div#jobDescriptionText",
+                "div.jobsearch-jobDescriptionText",
+                "div.jobsearch-JobComponent-description",
+                "div#job_description",
+            ]
+            
+            for selector in description_selectors:
+                desc_el = soup.select_one(selector)
+                if desc_el:
+                    text = desc_el.get_text(" ", strip=True)
+                    if len(text) > 200:  # Only return if substantial content
+                        return text
+            
+            # Fallback: try to find main content area
+            main_content = soup.select_one("main") or soup.select_one("div#jobsearch-Main")
+            if main_content:
+                # Get all text but filter out navigation/UI elements
+                text = main_content.get_text(" ", strip=True)
+                # Remove common UI noise patterns
+                lines = [line.strip() for line in text.split("\n") if line.strip()]
+                lines = [line for line in lines if len(line) > 50]  # Filter short lines
+                if lines:
+                    return " ".join(lines[:50])  # Limit to first 50 substantial lines
+            
+            return None
+        except Exception as e:
+            logger.debug(f"Error fetching full description from {job_url}: {e}")
+            return None
 
     def close(self) -> None:
         """Compatibility shim for orchestrator cleanup."""

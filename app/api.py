@@ -1152,12 +1152,33 @@ async def update_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
+    # Track status change for follow-up task creation
+    old_status = job.status
+    status_changed_to_applied = False
+    
     if update.status:
         job.status = update.status
+        # Check if status changed to "applied"
+        if update.status == "applied" and old_status != "applied":
+            status_changed_to_applied = True
+    
     if update.notes is not None:
         job.notes = update.notes
     
     await db.commit()
+    await db.refresh(job)
+    
+    # Automatically create follow-up task when job status changes to "applied"
+    if status_changed_to_applied:
+        try:
+            from app.ai.task_generator import TaskGenerator
+            followup_task = await TaskGenerator._create_followup_task(db, job)
+            if followup_task:
+                logger.info(f"Created follow-up task {followup_task.id} for job {job_id}")
+        except Exception as e:
+            logger.warning(f"Failed to create follow-up task for job {job_id}: {e}", exc_info=True)
+            # Don't fail the update if follow-up task creation fails
+    
     return {"message": "Job updated"}
 
 
@@ -2491,6 +2512,10 @@ async def update_application(
         if not app:
             raise HTTPException(status_code=404, detail="Application not found")
         
+        # Track status change for follow-up task creation and job status update
+        old_status = app.status
+        status_changed_to_submitted = False
+        
         # Verify document IDs if provided
         if update.resume_version_id:
             result = await db.execute(select(GeneratedDocument).where(GeneratedDocument.id == update.resume_version_id))
@@ -2506,7 +2531,38 @@ async def update_application(
         for field, value in update.dict(exclude_unset=True).items():
             setattr(app, field, value)
         
+        # Check if status changed to "submitted"
+        if update.status and update.status == "submitted" and old_status != "submitted":
+            status_changed_to_submitted = True
+        
         await db.commit()
+        await db.refresh(app)
+        
+        # When application is submitted:
+        # 1. Update job status to "applied" if not already
+        # 2. Create follow-up task automatically
+        if status_changed_to_submitted:
+            try:
+                # Get the job
+                result = await db.execute(select(Job).where(Job.id == app.job_id))
+                job = result.scalar_one_or_none()
+                
+                if job:
+                    # Update job status to "applied" if not already
+                    if job.status != "applied":
+                        job.status = "applied"
+                        await db.commit()
+                        await db.refresh(job)
+                    
+                    # Create follow-up task
+                    from app.ai.task_generator import TaskGenerator
+                    followup_task = await TaskGenerator._create_followup_task(db, job)
+                    if followup_task:
+                        logger.info(f"Created follow-up task {followup_task.id} for application {application_id} (job {app.job_id})")
+            except Exception as e:
+                logger.warning(f"Failed to create follow-up task for application {application_id}: {e}", exc_info=True)
+                # Don't fail the update if follow-up task creation fails
+        
         return {"message": "Application updated", "application_id": app.id}
     except HTTPException:
         raise

@@ -546,11 +546,13 @@ class CrawlerOrchestrator:
                 crawler = IndeedCrawler(
                     query=query,
                     location=config.get('location'),
-                    max_pages=config.get('max_pages', 2),
+                    max_pages=config.get('max_pages', 5),  # Increased default from 2 to 5
                     results_per_page=config.get('results_per_page', 20),
                     freshness_days=config.get('freshness_days'),
                     remote_only=config.get('remote_only', False),
                     company_name=company.name,
+                    fetch_full_descriptions=config.get('fetch_full_descriptions', True),
+                    adaptive_pagination=config.get('adaptive_pagination', True),
                 )
                 jobs = await crawler.fetch_jobs()
                 crawler.close()
@@ -565,10 +567,12 @@ class CrawlerOrchestrator:
                 crawler = LinkedInCrawler(
                     query=query,
                     location=config.get('location'),
-                    max_pages=config.get('max_pages', 2),
+                    max_pages=config.get('max_pages', 5),  # Increased default from 2 to 5
                     remote_only=config.get('remote_only', False),
                     filters=config.get('filters'),
                     company_name=company.name,
+                    fetch_full_descriptions=config.get('fetch_full_descriptions', True),
+                    adaptive_pagination=config.get('adaptive_pagination', True),
                 )
                 jobs = await crawler.fetch_jobs()
                 crawler.close()

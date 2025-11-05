@@ -21,44 +21,75 @@ class LinkedInCompanySource(CompanyDataSource):
     
     BASE_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
     
-    def __init__(self, keywords: str = "careers jobs", max_results: int = 100):
+    def __init__(self, keywords: str = "careers jobs", max_results: int = 200):
         self.keywords = keywords
         self.max_results = max_results
+        # Multiple search query variations for better coverage
+        self.search_variations = [
+            keywords,
+            "software engineer jobs",
+            "remote jobs",
+            "hiring now",
+            "tech jobs",
+            "developer jobs",
+        ]
     
     async def fetch(self) -> List[CompanyRecord]:
-        """Fetch companies from LinkedIn job postings"""
+        """Fetch companies from LinkedIn job postings with enhanced pagination"""
         companies: List[CompanyRecord] = []
         seen_companies: Set[str] = set()
         
         try:
-            async with httpx.AsyncClient(timeout=30.0, headers=self._headers()) as client:
-                max_pages = min(10, (self.max_results // 25) + 1)
+            async with httpx.AsyncClient(timeout=60.0, headers=self._headers(), follow_redirects=True) as client:
+                # Try multiple search variations
+                companies_per_variation = self.max_results // len(self.search_variations)
                 
-                for page in range(max_pages):
-                    start = page * 25
-                    params = {
-                        "keywords": self.keywords,
-                        "start": str(start),
-                    }
-                    url = f"{self.BASE_URL}?{urlencode(params)}"
-                    
-                    try:
-                        response = await client.get(url)
-                        if response.status_code == 404:
-                            logger.info(f"LinkedIn returned 404 for page {page + 1}")
-                            break
-                        response.raise_for_status()
-                        
-                        companies_found = self._extract_companies(response.text, seen_companies)
-                        companies.extend(companies_found)
-                        
-                        if len(companies) >= self.max_results:
-                            break
-                            
-                        await asyncio.sleep(1)  # Rate limiting
-                    except Exception as e:
-                        logger.warning(f"Error fetching LinkedIn page {page + 1}: {e}")
+                for search_query in self.search_variations:
+                    if len(companies) >= self.max_results:
                         break
+                    
+                    max_pages = min(20, (companies_per_variation // 25) + 1)  # Increased from 10 to 20
+                    consecutive_empty = 0
+                    
+                    for page in range(max_pages):
+                        start = page * 25
+                        params = {
+                            "keywords": search_query,
+                            "start": str(start),
+                        }
+                        url = f"{self.BASE_URL}?{urlencode(params)}"
+                        
+                        try:
+                            response = await client.get(url)
+                            if response.status_code == 404:
+                                logger.debug(f"LinkedIn returned 404 for page {page + 1} (query: {search_query})")
+                                break
+                            if response.status_code in [429, 503]:
+                                logger.warning(f"LinkedIn rate limited, waiting...")
+                                await asyncio.sleep(5)
+                                continue
+                            response.raise_for_status()
+                            
+                            companies_found = self._extract_companies(response.text, seen_companies)
+                            
+                            if not companies_found:
+                                consecutive_empty += 1
+                                if consecutive_empty >= 2:  # Stop after 2 empty pages
+                                    break
+                            else:
+                                consecutive_empty = 0
+                            
+                            companies.extend(companies_found)
+                            
+                            if len(companies) >= self.max_results:
+                                break
+                                
+                            await asyncio.sleep(1.5)  # Slightly longer delay
+                        except Exception as e:
+                            logger.warning(f"Error fetching LinkedIn page {page + 1} (query: {search_query}): {e}")
+                            break
+                    
+                    await asyncio.sleep(2)  # Delay between search variations
         except Exception as e:
             logger.error(f"Error in LinkedIn company discovery: {e}", exc_info=True)
         
@@ -66,27 +97,44 @@ class LinkedInCompanySource(CompanyDataSource):
         return companies[:self.max_results]
     
     def _extract_companies(self, html: str, seen_companies: Set[str]) -> List[CompanyRecord]:
-        """Extract company names and URLs from LinkedIn HTML"""
+        """Extract company names and URLs from LinkedIn HTML with improved parsing"""
         companies = []
         soup = BeautifulSoup(html, "html.parser")
         
-        # Find all job cards
-        job_cards = soup.select("div.base-card, li.job-search-card")
+        # Find all job cards - try multiple selectors
+        job_cards = soup.select("li.jobs-search-results__list-item, div.base-card, li.job-search-card, div.job-card-container")
         
         for card in job_cards:
             try:
-                # Extract company name
-                company_elem = card.select_one("h4.base-search-card__subtitle, a.job-search-card__subtitle-link")
+                # Extract company name - try multiple selectors
+                company_elem = (
+                    card.select_one("h4.base-search-card__subtitle") or
+                    card.select_one("a.job-search-card__subtitle-link") or
+                    card.select_one("span.job-search-card__company-name") or
+                    card.select_one("a[data-tracking-control-name='public_jobs_jserp-result_job-search-card-subtitle']")
+                )
+                
                 if not company_elem:
                     continue
                 
                 company_name = company_elem.get_text(strip=True)
-                if not company_name or company_name.lower() in seen_companies:
+                # Clean company name
+                company_name = re.sub(r'\s+', ' ', company_name).strip()
+                
+                if not company_name or len(company_name) < 2:
+                    continue
+                
+                # Skip common non-company names
+                skip_patterns = ['remote', 'view job', 'easy apply', 'apply now', 'save job']
+                if any(pattern in company_name.lower() for pattern in skip_patterns):
+                    continue
+                
+                if company_name.lower() in seen_companies:
                     continue
                 
                 seen_companies.add(company_name.lower())
                 
-                # Try to find career page URL
+                # Try to find career page URL with better extraction
                 career_url = self._find_career_url(card, company_name)
                 
                 if career_url:
@@ -107,23 +155,41 @@ class LinkedInCompanySource(CompanyDataSource):
         return companies
     
     def _find_career_url(self, card, company_name: str) -> Optional[str]:
-        """Try to find career page URL from LinkedIn card"""
+        """Try to find career page URL from LinkedIn card with better heuristics"""
         # Check for direct company link
-        company_link = card.select_one("a.job-search-card__subtitle-link, a.base-card__full-link")
+        company_link = (
+            card.select_one("a.job-search-card__subtitle-link") or
+            card.select_one("a.base-card__full-link") or
+            card.select_one("a[data-tracking-control-name='public_jobs_jserp-result_job-search-card-subtitle']")
+        )
+        
         if company_link:
             href = company_link.get("href", "")
             if href:
                 # Convert LinkedIn company page to potential career page
-                # e.g., linkedin.com/company/acme -> acme.com/careers
                 if "linkedin.com/company/" in href:
                     company_slug = href.split("linkedin.com/company/")[-1].split("/")[0].split("?")[0]
                     # Try common career page patterns
                     domain = company_slug.replace("-", "").lower()
-                    return f"https://www.{domain}.com/careers"
+                    # Try multiple common patterns
+                    patterns = [
+                        f"https://www.{domain}.com/careers",
+                        f"https://{domain}.com/careers",
+                        f"https://www.{domain}.com/jobs",
+                        f"https://{domain}.com/jobs",
+                        f"https://careers.{domain}.com",
+                    ]
+                    # Return first pattern (will be verified later)
+                    return patterns[0]
         
-        # Try to construct from company name
-        clean_name = re.sub(r'[^\w\s-]', '', company_name).lower().replace(' ', '')
-        if clean_name:
+        # Try to construct from company name with better cleaning
+        clean_name = re.sub(r'[^\w\s-]', '', company_name).lower()
+        # Remove common suffixes
+        clean_name = re.sub(r'\s+(inc|llc|ltd|corp|corporation|company|co)\s*$', '', clean_name)
+        clean_name = clean_name.replace(' ', '').replace('-', '').replace('_', '')
+        
+        if clean_name and len(clean_name) > 2:
+            # Try multiple domain patterns
             return f"https://www.{clean_name}.com/careers"
         
         return None
@@ -144,42 +210,73 @@ class IndeedCompanySource(CompanyDataSource):
     
     BASE_URL = "https://www.indeed.com/jobs"
     
-    def __init__(self, keywords: str = "careers jobs", max_results: int = 100):
+    def __init__(self, keywords: str = "careers jobs", max_results: int = 200):
         self.keywords = keywords
         self.max_results = max_results
+        # Multiple search query variations
+        self.search_variations = [
+            keywords,
+            "software engineer",
+            "remote developer",
+            "tech jobs",
+            "engineering jobs",
+            "hiring now",
+        ]
     
     async def fetch(self) -> List[CompanyRecord]:
-        """Fetch companies from Indeed job postings"""
+        """Fetch companies from Indeed job postings with enhanced pagination"""
         companies: List[CompanyRecord] = []
         seen_companies: Set[str] = set()
         
         try:
-            async with httpx.AsyncClient(timeout=30.0, headers=self._headers(), follow_redirects=True) as client:
-                max_pages = min(10, (self.max_results // 20) + 1)
+            async with httpx.AsyncClient(timeout=60.0, headers=self._headers(), follow_redirects=True) as client:
+                # Try multiple search variations
+                companies_per_variation = self.max_results // len(self.search_variations)
                 
-                for page in range(max_pages):
-                    start = page * 20
-                    params = {
-                        "q": self.keywords,
-                        "start": str(start),
-                        "limit": "20"
-                    }
-                    url = f"{self.BASE_URL}?{urlencode(params)}"
-                    
-                    try:
-                        response = await client.get(url)
-                        response.raise_for_status()
-                        
-                        companies_found = self._extract_companies(response.text, seen_companies)
-                        companies.extend(companies_found)
-                        
-                        if len(companies) >= self.max_results:
-                            break
-                            
-                        await asyncio.sleep(1)  # Rate limiting
-                    except Exception as e:
-                        logger.warning(f"Error fetching Indeed page {page + 1}: {e}")
+                for search_query in self.search_variations:
+                    if len(companies) >= self.max_results:
                         break
+                    
+                    max_pages = min(20, (companies_per_variation // 20) + 1)  # Increased from 10 to 20
+                    consecutive_empty = 0
+                    
+                    for page in range(max_pages):
+                        start = page * 20
+                        params = {
+                            "q": search_query,
+                            "start": str(start),
+                            "limit": "20"
+                        }
+                        url = f"{self.BASE_URL}?{urlencode(params)}"
+                        
+                        try:
+                            response = await client.get(url)
+                            if response.status_code in [429, 503]:
+                                logger.warning(f"Indeed rate limited, waiting...")
+                                await asyncio.sleep(5)
+                                continue
+                            response.raise_for_status()
+                            
+                            companies_found = self._extract_companies(response.text, seen_companies)
+                            
+                            if not companies_found:
+                                consecutive_empty += 1
+                                if consecutive_empty >= 2:  # Stop after 2 empty pages
+                                    break
+                            else:
+                                consecutive_empty = 0
+                            
+                            companies.extend(companies_found)
+                            
+                            if len(companies) >= self.max_results:
+                                break
+                                
+                            await asyncio.sleep(1.5)  # Slightly longer delay
+                        except Exception as e:
+                            logger.warning(f"Error fetching Indeed page {page + 1} (query: {search_query}): {e}")
+                            break
+                    
+                    await asyncio.sleep(2)  # Delay between search variations
         except Exception as e:
             logger.error(f"Error in Indeed company discovery: {e}", exc_info=True)
         
@@ -187,27 +284,44 @@ class IndeedCompanySource(CompanyDataSource):
         return companies[:self.max_results]
     
     def _extract_companies(self, html: str, seen_companies: Set[str]) -> List[CompanyRecord]:
-        """Extract company names and URLs from Indeed HTML"""
+        """Extract company names and URLs from Indeed HTML with improved parsing"""
         companies = []
         soup = BeautifulSoup(html, "html.parser")
         
-        # Find all job cards
-        job_cards = soup.select("div.job_seen_beacon, div.cardOutline, td.resultContent")
+        # Find all job cards - try multiple selectors
+        job_cards = soup.select("div.job_seen_beacon, div.cardOutline, td.resultContent, div[data-jk]")
         
         for card in job_cards:
             try:
-                # Extract company name
-                company_elem = card.select_one("span.companyName, a[data-testid='company-name']")
+                # Extract company name - try multiple selectors
+                company_elem = (
+                    card.select_one("span.companyName") or
+                    card.select_one("a[data-testid='company-name']") or
+                    card.select_one("a.companyOverviewLink") or
+                    card.select_one("span[data-testid='company-name']")
+                )
+                
                 if not company_elem:
                     continue
                 
                 company_name = company_elem.get_text(strip=True)
-                if not company_name or company_name.lower() in seen_companies:
+                # Clean company name
+                company_name = re.sub(r'\s+', ' ', company_name).strip()
+                
+                if not company_name or len(company_name) < 2:
+                    continue
+                
+                # Skip common non-company names
+                skip_patterns = ['remote', 'view job', 'easy apply', 'apply now', 'urgent', 'hiring']
+                if any(pattern in company_name.lower() for pattern in skip_patterns):
+                    continue
+                
+                if company_name.lower() in seen_companies:
                     continue
                 
                 seen_companies.add(company_name.lower())
                 
-                # Try to find career page URL
+                # Try to find career page URL with better extraction
                 career_url = self._find_career_url(card, company_name)
                 
                 if career_url:
@@ -228,21 +342,41 @@ class IndeedCompanySource(CompanyDataSource):
         return companies
     
     def _find_career_url(self, card, company_name: str) -> Optional[str]:
-        """Try to find career page URL from Indeed card"""
-        # Check for company website link
-        company_link = card.select_one("a[data-testid='company-name'], a.companyName")
+        """Try to find career page URL from Indeed card with better heuristics"""
+        # Check for company website link - try multiple selectors
+        company_link = (
+            card.select_one("a[data-testid='company-name']") or
+            card.select_one("a.companyName") or
+            card.select_one("a.companyOverviewLink")
+        )
+        
         if company_link:
             href = company_link.get("href", "")
             if href and "http" in href:
                 # Try to convert to career page
-                parsed = urlparse(href)
-                if parsed.netloc:
-                    domain = parsed.netloc.replace("www.", "")
-                    return f"https://www.{domain}/careers"
+                try:
+                    parsed = urlparse(href)
+                    if parsed.netloc:
+                        domain = parsed.netloc.replace("www.", "").split(":")[0]
+                        # Try multiple common patterns
+                        patterns = [
+                            f"https://www.{domain}/careers",
+                            f"https://{domain}/careers",
+                            f"https://www.{domain}/jobs",
+                            f"https://{domain}/jobs",
+                            f"https://careers.{domain}",
+                        ]
+                        return patterns[0]
+                except Exception:
+                    pass
         
-        # Try to construct from company name
-        clean_name = re.sub(r'[^\w\s-]', '', company_name).lower().replace(' ', '')
-        if clean_name:
+        # Try to construct from company name with better cleaning
+        clean_name = re.sub(r'[^\w\s-]', '', company_name).lower()
+        # Remove common suffixes
+        clean_name = re.sub(r'\s+(inc|llc|ltd|corp|corporation|company|co)\s*$', '', clean_name)
+        clean_name = clean_name.replace(' ', '').replace('-', '').replace('_', '')
+        
+        if clean_name and len(clean_name) > 2:
             return f"https://www.{clean_name}.com/careers"
         
         return None
@@ -269,21 +403,28 @@ class WebSearchCompanySource(CompanyDataSource):
         self.max_results = max_results
     
     async def fetch(self) -> List[CompanyRecord]:
-        """Fetch companies using web search"""
+        """Fetch companies using web search with more query variations"""
         companies: List[CompanyRecord] = []
         seen_companies: Set[str] = set()
         
         try:
-            async with httpx.AsyncClient(timeout=30.0, headers=self._headers(), follow_redirects=True) as client:
-                # Search for companies with career pages
+            async with httpx.AsyncClient(timeout=60.0, headers=self._headers(), follow_redirects=True) as client:
+                # Expanded search queries for better coverage
                 search_queries = [
                     "companies with career pages",
                     "best companies to work for careers",
                     "fortune 500 companies careers",
-                    "startup companies careers"
+                    "startup companies careers",
+                    "tech companies hiring",
+                    "remote companies careers",
+                    "software companies jobs",
+                    "engineering companies careers",
                 ]
                 
-                for query in search_queries[:2]:  # Limit to avoid rate limiting
+                for query in search_queries:
+                    if len(companies) >= self.max_results:
+                        break
+                    
                     try:
                         params = {"q": query}
                         response = await client.post(
@@ -291,6 +432,10 @@ class WebSearchCompanySource(CompanyDataSource):
                             data=params,
                             headers=self._headers()
                         )
+                        if response.status_code in [429, 503]:
+                            logger.warning(f"Web search rate limited, waiting...")
+                            await asyncio.sleep(5)
+                            continue
                         response.raise_for_status()
                         
                         companies_found = self._extract_companies(response.text, seen_companies)
@@ -299,7 +444,7 @@ class WebSearchCompanySource(CompanyDataSource):
                         if len(companies) >= self.max_results:
                             break
                             
-                        await asyncio.sleep(2)  # Rate limiting
+                        await asyncio.sleep(2.5)  # Rate limiting
                     except Exception as e:
                         logger.warning(f"Error in web search query '{query}': {e}")
                         continue
@@ -415,11 +560,11 @@ class CompanyDiscoveryService:
     async def discover_companies(
         self,
         keywords: Optional[str] = None,
-        max_companies: int = 50,
+        max_companies: int = 100,
         existing_company_names: Optional[Set[str]] = None
     ) -> List[Dict]:
         """
-        Discover companies from all sources
+        Discover companies from all sources with parallel execution
         
         Args:
             keywords: Search keywords (optional, uses config defaults)
@@ -431,34 +576,63 @@ class CompanyDiscoveryService:
         """
         existing = existing_company_names or set()
         
-        # Collect from all sources
+        # Collect from all sources in parallel for faster execution
         all_records: List[CompanyRecord] = []
         
         try:
-            # Discover from LinkedIn
-            linkedin_records = await self.linkedin_source.fetch()
-            all_records.extend(linkedin_records)
+            # Discover from all sources in parallel
+            linkedin_task = self.linkedin_source.fetch()
+            indeed_task = self.indeed_source.fetch()
+            web_search_task = self.web_search_source.fetch()
             
-            # Discover from Indeed
-            indeed_records = await self.indeed_source.fetch()
-            all_records.extend(indeed_records)
+            # Wait for all sources to complete
+            results = await asyncio.gather(
+                linkedin_task,
+                indeed_task,
+                web_search_task,
+                return_exceptions=True
+            )
             
-            # Discover from web search
-            web_search_records = await self.web_search_source.fetch()
-            all_records.extend(web_search_records)
+            # Process results
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.error(f"Error in company discovery source: {result}", exc_info=True)
+                elif isinstance(result, list):
+                    all_records.extend(result)
         except Exception as e:
             logger.error(f"Error during company discovery: {e}", exc_info=True)
         
-        # Deduplicate by company name
+        # Deduplicate by company name with better matching
         unique_companies: Dict[str, CompanyRecord] = {}
         for record in all_records:
-            name_lower = record.name.lower()
-            if name_lower not in existing and name_lower not in unique_companies:
+            name_lower = record.name.lower().strip()
+            
+            # Skip if already exists in database
+            if name_lower in existing:
+                continue
+            
+            # Skip very short or invalid names
+            if len(name_lower) < 2:
+                continue
+            
+            # Prefer higher priority records for duplicates
+            if name_lower in unique_companies:
+                existing_record = unique_companies[name_lower]
+                if record.priority > existing_record.priority:
+                    unique_companies[name_lower] = record
+            else:
                 unique_companies[name_lower] = record
+        
+        # Sort by priority (higher first) and source quality
+        sorted_records = sorted(
+            unique_companies.values(),
+            key=lambda r: (r.priority, r.source == "linkedin", r.source == "indeed"),
+            reverse=True
+        )
         
         # Convert to dictionaries
         discovered = []
-        for record in list(unique_companies.values())[:max_companies]:
+        for record in sorted_records[:max_companies]:
             discovered.append({
                 "name": record.name,
                 "career_page_url": record.career_page_url,
@@ -467,5 +641,5 @@ class CompanyDiscoveryService:
                 "priority": record.priority
             })
         
-        logger.info(f"Company discovery completed: {len(discovered)} unique companies found")
+        logger.info(f"Company discovery completed: {len(discovered)} unique companies found from {len(all_records)} total records")
         return discovered

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     
     # Scheduling
     CRAWL_INTERVAL_MINUTES: int = 30
+    SEARCH_CRAWL_INTERVAL_MINUTES: int = 30  # How often to run search-based crawls
     DAILY_TOP_JOBS_COUNT: int = 5
     DAILY_GENERATION_TIME: str = "15:00"  # 3 PM in HH:MM format
     
@@ -76,6 +77,7 @@ class Settings(BaseSettings):
     COMPANY_DISCOVERY_ENABLED: bool = True  # Enable automated company discovery
     COMPANY_DISCOVERY_INTERVAL_HOURS: int = 6  # How often to run discovery (in hours)
     COMPANY_AUTO_APPROVE_THRESHOLD: float = 70.0  # Auto-approve companies with confidence >= this value
+    COMPANY_DISCOVERY_BATCH_SIZE: int = 100  # Increased from 50 to 100 for better discovery
     LINKEDIN_SEARCH_KEYWORDS: str = "careers jobs"  # Keywords for LinkedIn discovery
     INDEED_SEARCH_KEYWORDS: str = "careers jobs"  # Keywords for Indeed discovery
     WEB_SEARCH_KEYWORDS: str = "companies careers"  # Keywords for web search discovery
