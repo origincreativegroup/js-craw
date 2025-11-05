@@ -183,7 +183,7 @@ export const getCrawlStatus = async (): Promise<CrawlStatus> => {
   return response.data;
 };
 
-export const triggerCrawl = async (crawlType: 'searches' | 'all' = 'searches'): Promise<void> => {
+export const triggerCrawl = async (crawlType: 'searches' | 'all' = 'all'): Promise<void> => {
   await api.post('/crawl/run', null, { params: { crawl_type: crawlType } });
 };
 

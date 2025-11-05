@@ -220,6 +220,24 @@ async def lifespan(app: FastAPI):
         replace_existing=True
     )
     
+    # Periodic AI job summarization/ranking for newly found jobs
+    async def periodic_ai_job_summary():
+        try:
+            from app.ai.job_filter import JobFilter
+            job_filter = JobFilter()
+            await job_filter.filter_and_rank_jobs()
+            logger.info("Periodic AI job summary completed")
+        except Exception as e:
+            logger.error(f"Error in periodic AI job summary: {e}", exc_info=True)
+    
+    scheduler.add_job(
+        periodic_ai_job_summary,
+        trigger=IntervalTrigger(minutes=60),
+        id="periodic_ai_job_summary",
+        name="Periodic AI job summarization and ranking",
+        replace_existing=True
+    )
+    
     # Daily AI filtering and document generation
     async def daily_ai_selection_and_documents():
         """Select top jobs and generate documents daily."""

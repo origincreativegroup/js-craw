@@ -1345,14 +1345,14 @@ async def save_credentials(
 @router.post("/crawl/run")
 async def trigger_crawl(
     request: Request,
-    crawl_type: Optional[str] = Query(None, description="Crawl type: 'searches' (default) or 'all'"),
+    crawl_type: Optional[str] = Query(None, description="Crawl type: 'searches' or 'all' (default: 'all')"),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Manually trigger a crawl.
     
-    By default, runs all active searches. If crawl_type="all", crawls all companies
-    with AI filtering (base crawling).
+    By default, crawls ALL companies (recommended). If crawl_type="searches", runs
+    search-based crawling when active searches exist.
     
     Query params:
         crawl_type: "searches" (default) or "all"
@@ -1372,8 +1372,24 @@ async def trigger_crawl(
                 detail="No active companies found. Please load companies first using POST /api/companies/load-from-csv"
             )
         
-        # Default to "searches" if not specified
-        if crawl_type is None or crawl_type == "searches":
+        # Default to "all" if not specified
+        if crawl_type is None or crawl_type == "all":
+            # Base crawling: crawl all companies and use AI to filter
+            try:
+                results = await orchestrator.crawl_all_companies()
+                return {
+                    "message": "Universal crawl completed (all companies crawled, AI-filtered)",
+                    "new_jobs": len(results),
+                    "crawl_type": "universal",
+                    "companies_crawled": active_companies_count
+                }
+            except Exception as e:
+                logger.error(f"Error during universal crawl: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Crawl failed: {str(e)}. Check logs for details."
+                )
+        elif crawl_type == "searches":
             # Check if there are active searches
             searches_result = await db.execute(
                 select(func.count(SearchCriteria.id)).where(SearchCriteria.is_active == True)
@@ -1398,22 +1414,6 @@ async def trigger_crawl(
                 }
             except Exception as e:
                 logger.error(f"Error during search-based crawl: {e}", exc_info=True)
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Crawl failed: {str(e)}. Check logs for details."
-                )
-        elif crawl_type == "all":
-            # Base crawling: crawl all companies and use AI to filter
-            try:
-                results = await orchestrator.crawl_all_companies()
-                return {
-                    "message": "Universal crawl completed (all companies crawled, AI-filtered)",
-                    "new_jobs": len(results),
-                    "crawl_type": "universal",
-                    "companies_crawled": active_companies_count
-                }
-            except Exception as e:
-                logger.error(f"Error during universal crawl: {e}", exc_info=True)
                 raise HTTPException(
                     status_code=500,
                     detail=f"Crawl failed: {str(e)}. Check logs for details."
