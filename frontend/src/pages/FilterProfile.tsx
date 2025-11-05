@@ -16,7 +16,7 @@ import {
   getUserProfile, 
   updateUserProfile 
 } from '../services/api';
-import type { UserProfile, UserProfileUpdate } from '../types';
+import type { UserProfileUpdate } from '../types';
 import './FilterProfile.css';
 
 const FilterProfile = () => {
