@@ -27,7 +27,7 @@ const AIChat = ({
   jobTitle, 
   company, 
   jobId,
-  onAction, 
+  onAction: _onAction, 
   className = '',
   minimized = false,
   onMinimize,

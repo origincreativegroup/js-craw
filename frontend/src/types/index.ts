@@ -13,6 +13,7 @@ export interface Job {
   ai_pros?: string[];
   ai_cons?: string[];
   ai_keywords_matched?: string[];
+  ai_recommended?: boolean;
   posted_date?: string;
   discovered_at: string;
   notes?: string;
