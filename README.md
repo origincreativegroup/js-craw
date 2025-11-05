@@ -118,6 +118,29 @@ docker-compose up -d
 docker exec job-crawler-ollama ollama pull llama2
 ```
 
+### Refreshing the companies catalog
+
+Use the automated pipeline to ingest crawl data, enforce the 1500-company cap,
+and verify each entry before writing `companies.csv`:
+
+```bash
+python scripts/crawl_companies.py --seed static/company_sources.json --output companies.csv
+```
+
+The pipeline performs three stages:
+
+1. **Collection** – The configured sources defined in
+   `app/services/company_sources.py` return structured `CompanyRecord`
+   objects for each crawl run.
+2. **Filtering** – `CompanyFilteringPipeline` sorts by crawl success and
+   priority before truncating the list to the configured cap (default 1500).
+3. **Verification** – `CompanyVerifier` keeps entries with crawl results and
+   falls back to the AI heuristic for the remainder, discarding companies that
+   do not pass the review.
+
+Verbose logging is emitted during each step so you can monitor how many
+companies were collected, filtered, and finally written to disk.
+
 ### 3. Configure
 
 1. Open http://localhost:8001/static/index.html
