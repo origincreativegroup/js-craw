@@ -1,0 +1,47 @@
+# Exclude static files - they're built during Docker build
+static/
+static/**
+
+# Exclude frontend build artifacts - they're built in-container
+frontend/dist/
+frontend/node_modules/
+
+# Exclude git files
+.git/
+.gitignore
+
+# Exclude development files
+*.pyc
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Exclude environment files
+.env
+.env.local
+.env.*.local
+
+# Exclude IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Exclude test files (optional)
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Exclude documentation
+docs/
+*.md
+!README.md
+

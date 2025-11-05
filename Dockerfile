@@ -23,8 +23,15 @@ COPY frontend/ .
 RUN npm run build
 WORKDIR /app
 
-# Copy application code (frontend build artifacts are already in static/)
-COPY . .
+# Copy application code (exclude static/ which is built above)
+# Copy only necessary files to avoid overwriting freshly built static files
+COPY app/ ./app/
+COPY main.py .
+COPY requirements.txt .
+COPY pytest.ini .
+COPY search_recipes.json .
+COPY docker-compose.yml .
+COPY start.sh .
 
 # Expose port
 EXPOSE 8001

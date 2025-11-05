@@ -167,6 +167,9 @@ class GitHubListener:
                         new_commit = self._get_current_commit_sha()
                         logger.info(f"Successfully pulled code. Commit: {old_commit} -> {new_commit}")
                         
+                        # Trigger deployment
+                        self._trigger_deployment(old_commit, new_commit)
+                        
                         # Run tests and handle failures if configured
                         if self.run_tests or self.handle_failures:
                             self._process_update(old_commit, new_commit)
@@ -181,6 +184,77 @@ class GitHubListener:
             logger.error("Git fetch/pull timed out")
         except Exception as e:
             logger.error(f"Error checking for updates: {e}")
+    
+    def _trigger_deployment(self, old_commit: str, new_commit: str):
+        """Trigger automatic deployment after code pull"""
+        deploy_script = self.repo_path / 'scripts' / 'deployment' / 'deploy.sh'
+        
+        if not deploy_script.exists():
+            logger.warning(f"Deployment script not found at {deploy_script}, skipping auto-deployment")
+            return
+        
+        try:
+            logger.info("Triggering automatic deployment...")
+            
+            # Make script executable
+            os.chmod(deploy_script, 0o755)
+            
+            # Run deployment script
+            result = subprocess.run(
+                ['bash', str(deploy_script), str(self.repo_path)],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minute timeout for deployment
+            )
+            
+            if result.returncode == 0:
+                logger.info("Deployment completed successfully")
+                if result.stdout:
+                    logger.debug(f"Deployment output: {result.stdout[-500:]}")  # Last 500 chars
+            else:
+                logger.error(f"Deployment failed with exit code {result.returncode}")
+                if result.stderr:
+                    logger.error(f"Deployment error: {result.stderr[-500:]}")
+                if self.handle_failures:
+                    self._handle_deployment_failure(result.stderr or "Deployment failed", old_commit, new_commit)
+                    
+        except subprocess.TimeoutExpired:
+            logger.error("Deployment timed out after 10 minutes")
+            if self.handle_failures:
+                self._handle_deployment_failure("Deployment timed out", old_commit, new_commit)
+        except Exception as e:
+            logger.error(f"Error triggering deployment: {e}")
+            if self.handle_failures:
+                self._handle_deployment_failure(str(e), old_commit, new_commit)
+    
+    def _handle_deployment_failure(self, error_message: str, old_commit: str, new_commit: str):
+        """Handle deployment failure"""
+        failure_handler_path = self.repo_path / 'scripts' / 'deployment' / 'failure_handler.py'
+        
+        if not failure_handler_path.exists():
+            logger.warning("Failure handler not found, skipping failure handling")
+            return
+        
+        try:
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(failure_handler_path),
+                    'deployment_failure',
+                    f"Deployment failed: {error_message[:200]}",
+                    '--project-root', str(self.repo_path),
+                    '--context', json.dumps({
+                        'old_commit': old_commit,
+                        'new_commit': new_commit,
+                        'source': 'github_listener'
+                    })
+                ],
+                cwd=self.repo_path,
+                timeout=60
+            )
+        except Exception as e:
+            logger.error(f"Error handling deployment failure: {e}")
     
     def _process_update(self, old_commit: str, new_commit: str):
         """Process code update: run tests and handle failures"""
