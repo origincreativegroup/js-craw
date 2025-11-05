@@ -42,7 +42,6 @@ const Dashboard = () => {
   const statusCounts = stats?.jobs_by_status || {};
   const newJobs = statusCounts['new'] || 0;
   const applied = statusCounts['applied'] || 0;
-  const _rejected = statusCounts['rejected'] || 0;
 
   return (
     <div className="dashboard">
