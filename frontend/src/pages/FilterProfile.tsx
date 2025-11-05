@@ -7,7 +7,6 @@ import {
   Briefcase,
   GraduationCap,
   Settings,
-  MapPin,
   CheckCircle,
   AlertCircle
 } from 'lucide-react';
@@ -21,7 +20,6 @@ import type { UserProfile, UserProfileUpdate } from '../types';
 import './FilterProfile.css';
 
 const FilterProfile = () => {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -68,7 +66,6 @@ const FilterProfile = () => {
     try {
       setLoading(true);
       const data = await getUserProfile();
-      setProfile(data);
       
       // Populate form state
       setBaseResume(data.base_resume || '');
@@ -105,7 +102,7 @@ const FilterProfile = () => {
         base_resume: baseResume,
         skills: skills,
         experience: experience,
-        education: education,
+        education: education || undefined,
         preferences: {
           keywords: preferences.keywords || undefined,
           location: preferences.location || undefined,
@@ -326,7 +323,9 @@ const FilterProfile = () => {
                       size="sm"
                       icon={<X size={14} />}
                       onClick={() => removeExperience(index)}
-                    />
+                    >
+                      Remove
+                    </Button>
                   </div>
                   <div className="experience-form">
                     <div className="form-row">
