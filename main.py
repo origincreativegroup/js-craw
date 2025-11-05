@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from app.config import settings
 from app.database import init_db, close_db
@@ -219,6 +220,56 @@ async def lifespan(app: FastAPI):
         replace_existing=True
     )
     
+    # Daily AI filtering and document generation
+    async def daily_ai_selection_and_documents():
+        """Select top jobs and generate documents daily."""
+        try:
+            from app.ai.job_filter import JobFilter
+            from app.ai.document_generator import DocumentGenerator
+            from app.database import AsyncSessionLocal
+            
+            job_filter = JobFilter()
+            doc_gen = DocumentGenerator()
+            
+            # Rank jobs for the day and select top N
+            await job_filter.filter_and_rank_jobs()
+            top_jobs = await job_filter.select_top_jobs(count=settings.DAILY_TOP_JOBS_COUNT)
+            
+            if not top_jobs:
+                logger.info("Daily AI selection: no top jobs found today")
+                return
+            
+            # Generate documents for selected jobs
+            async with AsyncSessionLocal() as db:
+                results = []
+                for j in top_jobs:
+                    try:
+                        gen = await doc_gen.generate_both(j, None, db)  # generator fetches profile internally when needed
+                        results.append({
+                            'job_id': j.id,
+                            'resume': gen.get('resume') is not None,
+                            'cover_letter': gen.get('cover_letter') is not None,
+                        })
+                    except Exception as e:
+                        logger.error(f"Error generating documents for job {j.id}: {e}")
+                logger.info(f"Daily documents generated for {len(results)} jobs")
+        except Exception as e:
+            logger.error(f"Error in daily AI selection/doc generation: {e}", exc_info=True)
+    
+    # Schedule daily AI selection and document generation at configured time
+    try:
+        hour, minute = map(int, settings.DAILY_GENERATION_TIME.split(":"))
+        scheduler.add_job(
+            daily_ai_selection_and_documents,
+            trigger=CronTrigger(hour=hour, minute=minute),
+            id="daily_ai_documents",
+            name="Daily AI top jobs selection and document generation",
+            replace_existing=True
+        )
+        logger.info(f"Scheduled daily AI selection/doc generation at {settings.DAILY_GENERATION_TIME}")
+    except Exception as e:
+        logger.warning(f"Could not schedule daily AI selection/doc generation: {e}")
+    
     # Cleanup stuck crawl logs
     async def cleanup_stuck_logs_job():
         """Periodically clean up crawl logs stuck in 'running' status"""
@@ -242,6 +293,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Scheduler started:")
     logger.info(f"  - Crawling all companies every {settings.CRAWL_INTERVAL_MINUTES} minutes")
     logger.info(f"  - Refreshing company list daily at 2:00 AM")
+    logger.info(f"  - Daily AI selection/doc generation at {getattr(settings, 'DAILY_GENERATION_TIME', '15:00')}")
     logger.info(f"  - Checking task reminders every {settings.TASK_REMINDER_CHECK_INTERVAL_MINUTES} minutes")
     logger.info(f"  - Checking OpenWebUI health every 5 minutes")
     logger.info(f"  - Cleaning up stuck logs every {settings.STUCK_LOG_CLEANUP_INTERVAL_MINUTES} minutes")
@@ -301,6 +353,16 @@ async def root():
 async def health():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+# SPA fallback: serve frontend for non-API routes
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    # Allow API and static to 404 normally
+    if full_path.startswith("api") or full_path.startswith("static"):
+        return {"detail": "Not Found"}
+    # Serve built index.html for client-side routing
+    return FileResponse("static/index.html")
 
 
 if __name__ == "__main__":

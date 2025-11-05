@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     
     # Crawl timeout settings
     CRAWL_TIMEOUT_SECONDS: int = 300  # 5 minutes timeout per company crawl
+    MAX_CONCURRENT_COMPANY_CRAWLS: int = 5  # Parallel company crawls
+    AI_BATCH_SIZE: int = 20  # Jobs analyzed in parallel per batch
     STUCK_LOG_CLEANUP_THRESHOLD_MINUTES: int = 60  # Mark logs as failed if running longer than this
     STUCK_LOG_CLEANUP_INTERVAL_MINUTES: int = 15  # How often to check for stuck logs
     
@@ -82,6 +84,17 @@ class Settings(BaseSettings):
     AUTO_GENERATE_TASKS: bool = True  # Enable/disable automatic task generation from AI insights
     TASK_MATCH_SCORE_THRESHOLD: float = 50.0  # Minimum match score for auto-generating tasks
     TASK_REMINDER_CHECK_INTERVAL_MINUTES: int = 60  # How often to check for due tasks (in minutes)
+    
+    # HTTP client settings
+    HTTP_MAX_RETRIES: int = 3
+    HTTP_INITIAL_BACKOFF_MS: int = 300
+    HTTP_MAX_BACKOFF_MS: int = 5000
+    HTTP_REQUEST_TIMEOUT_SECONDS: int = 20
+    HTTP_USER_AGENTS: Optional[list[str]] = None
+    HTTP_PROXIES: Optional[list[str]] = None
+    ROBOTS_RESPECT: bool = True
+    HTTP_RATE_PER_HOST: float = 1.0
+    HTTP_BURST_PER_HOST: int = 2
     
     class Config:
         env_file = ".env"

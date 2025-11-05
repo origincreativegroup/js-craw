@@ -21,6 +21,21 @@ export interface Job {
   generated_documents?: GeneratedDocument[];
 }
 
+export interface SuggestedStep {
+  id: string;
+  label: string;
+  task_type: string; // apply, research, network, prepare_interview, follow_up
+  title: string;
+  notes?: string;
+  suggested_due_date?: string;
+}
+
+export interface AnalyzeJobResponse {
+  job_id: number;
+  analysis: any;
+  suggested_next_steps: SuggestedStep[];
+}
+
 export interface Task {
   id: number;
   job_id: number;

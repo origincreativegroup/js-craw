@@ -16,6 +16,7 @@ import type {
   UserProfileUpdate,
   PendingCompany,
   DiscoveryStatus,
+  AnalyzeJobResponse,
 } from '../types';
 
 const API_BASE = '/api';
@@ -50,9 +51,9 @@ export const updateJob = async (id: number, data: { status?: string; notes?: str
   await api.patch(`/jobs/${id}`, data);
 };
 
-export const analyzeJob = async (id: number): Promise<any> => {
+export const analyzeJob = async (id: number): Promise<AnalyzeJobResponse> => {
   const response = await api.post(`/jobs/${id}/analyze`);
-  return response.data;
+  return response.data as AnalyzeJobResponse;
 };
 
 // Tasks

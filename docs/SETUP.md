@@ -14,6 +14,7 @@ nano .env  # or use your preferred editor
 - Set `SECRET_KEY` to something random
 - Choose notification method (ntfy recommended)
 - Set your notification credentials
+ - Review HTTP/crawl tuning defaults in `docs/HTTP_CRAWL_TUNING.md` (rate limits, retries, timeouts)
 
 ### 2. Start the System
 

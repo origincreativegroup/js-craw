@@ -5,6 +5,8 @@ import json
 from typing import List, Dict, Optional
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
+from app.services.http_client import HttpClient
+from app.crawler.errors import ParseError
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,7 @@ class GenericCrawler:
         self.career_url = career_url
         self.ollama_host = ollama_host
         self.ollama_model = ollama_model
+        self.http = HttpClient()
 
     async def fetch_jobs(self) -> List[Dict]:
         """
@@ -37,15 +40,19 @@ class GenericCrawler:
         try:
             logger.info(f"Fetching career page for {self.company_name}: {self.career_url}")
 
-            # Fetch HTML
-            html = await self._fetch_html(self.career_url)
+            # 1) Try structured sources first (sitemap, RSS/Atom, JSON-LD)
+            jobs: List[Dict] = []
 
-            if not html:
-                logger.warning(f"No HTML content fetched for {self.company_name}")
-                return []
-
-            # Extract jobs using AI
-            jobs = await self._extract_jobs_with_ai(html)
+            structured_jobs = await self._extract_from_structured_sources()
+            if structured_jobs:
+                jobs.extend(structured_jobs)
+            else:
+                # 2) Fallback to HTML + AI extraction
+                html = await self._fetch_html(self.career_url)
+                if not html:
+                    logger.warning(f"No HTML content fetched for {self.company_name}")
+                    return []
+                jobs = await self._extract_jobs_with_ai(html)
 
             logger.info(f"Found {len(jobs)} jobs for {self.company_name} via AI parsing")
 
@@ -56,7 +63,7 @@ class GenericCrawler:
                 if normalized:
                     normalized_jobs.append(normalized)
 
-            return normalized_jobs
+            return self._dedupe(normalized_jobs)
 
         except Exception as e:
             logger.error(f"Error fetching jobs for {self.company_name}: {e}", exc_info=True)
@@ -65,15 +72,124 @@ class GenericCrawler:
     async def _fetch_html(self, url: str) -> str:
         """Fetch HTML content from URL"""
         try:
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-                response = await client.get(url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                })
-                response.raise_for_status()
+            response = await self.http.get(url)
+            if response.status_code in (200, 304):
                 return response.text
+            raise ParseError(f"Unexpected status: {response.status_code}")
         except Exception as e:
             logger.error(f"Error fetching HTML from {url}: {e}")
             raise
+
+    async def _extract_from_structured_sources(self) -> List[Dict]:
+        jobs: List[Dict] = []
+        try:
+            # Attempt robots-linked sitemap
+            parsed = urlparse(self.career_url)
+            base = f"{parsed.scheme}://{parsed.netloc}"
+            sitemap_urls = [f"{base}/sitemap.xml", f"{base}/sitemap_index.xml"]
+            for sm in sitemap_urls:
+                try:
+                    r = await self.http.get(sm)
+                    if r.status_code == 200 and ("<urlset" in r.text or "<sitemapindex" in r.text):
+                        jobs.extend(self._parse_sitemap(r.text))
+                        if jobs:
+                            break
+                except Exception:
+                    continue
+
+            if jobs:
+                return [j for j in (self._normalize_job(j) for j in jobs) if j]
+
+            # Check career page for RSS/Atom links
+            html = await self._fetch_html(self.career_url)
+            soup = BeautifulSoup(html, 'html.parser')
+            for link in soup.find_all('link', rel='alternate'):
+                typ = (link.get('type') or '').lower()
+                if 'rss' in typ or 'atom' in typ or 'xml' in typ:
+                    href = link.get('href')
+                    if href:
+                        feed_url = urljoin(self.career_url, href)
+                        try:
+                            fr = await self.http.get(feed_url)
+                            if fr.status_code == 200 and fr.text:
+                                jobs.extend(self._parse_feed(fr.text))
+                                if jobs:
+                                    break
+                        except Exception:
+                            continue
+
+            if jobs:
+                return [j for j in (self._normalize_job(j) for j in jobs) if j]
+
+            # JSON-LD JobPosting
+            for script in soup.find_all('script', type='application/ld+json'):
+                try:
+                    data = json.loads(script.string or '{}')
+                    postings = self._extract_jobposting_from_jsonld(data)
+                    if postings:
+                        jobs.extend(postings)
+                except Exception:
+                    continue
+
+            if jobs:
+                return [j for j in (self._normalize_job(j) for j in jobs) if j]
+        except Exception as e:
+            logger.debug(f"Structured source extraction failed or empty: {e}")
+        return []
+
+    def _parse_sitemap(self, xml_text: str) -> List[Dict]:
+        items: List[Dict] = []
+        try:
+            # naive url extraction to avoid new dependency
+            for url_tag in BeautifulSoup(xml_text, 'xml').find_all('url'):
+                loc = url_tag.find('loc')
+                if loc and loc.text:
+                    items.append({"title": None, "url": loc.text})
+        except Exception:
+            pass
+        return items
+
+    def _parse_feed(self, xml_text: str) -> List[Dict]:
+        jobs: List[Dict] = []
+        soup = BeautifulSoup(xml_text, 'xml')
+        for item in soup.find_all(['item', 'entry']):
+            title = (item.find('title').text if item.find('title') else '').strip()
+            link_tag = item.find('link')
+            href = link_tag.get('href') if link_tag and link_tag.has_attr('href') else (link_tag.text if link_tag else '')
+            jobs.append({"title": title, "url": href})
+        return jobs
+
+    def _extract_jobposting_from_jsonld(self, data) -> List[Dict]:
+        jobs: List[Dict] = []
+        def collect(obj):
+            if isinstance(obj, dict):
+                t = obj.get('@type')
+                if t == 'JobPosting':
+                    jobs.append({
+                        "title": obj.get('title'),
+                        "location": (obj.get('jobLocation', {}) or {}).get('address', {}).get('addressLocality'),
+                        "url": obj.get('url') or obj.get('hiringOrganization', {}).get('sameAs'),
+                        "job_type": obj.get('employmentType'),
+                        "description": obj.get('description')
+                    })
+                for v in obj.values():
+                    collect(v)
+            elif isinstance(obj, list):
+                for v in obj:
+                    collect(v)
+        collect(data)
+        return jobs
+
+    def _dedupe(self, jobs: List[Dict]) -> List[Dict]:
+        seen = set()
+        out: List[Dict] = []
+        for j in jobs:
+            key = (j.get('url') or '').lower().strip(), (j.get('title') or '').lower().strip()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(j)
+        return out
 
     async def _extract_jobs_with_ai(self, html: str) -> List[Dict]:
         """
@@ -243,4 +359,9 @@ Important:
 
     def close(self):
         """Cleanup - no-op for HTTP-based crawler"""
-        pass
+        try:
+            # best-effort
+            import asyncio
+            asyncio.create_task(self.http.close())
+        except Exception:
+            pass

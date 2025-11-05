@@ -3,8 +3,8 @@ import { Search, Sparkles, ExternalLink, MapPin, Building2, MessageSquare } from
 import Card from '../components/Card';
 import Button from '../components/Button';
 import OpenWebUIChat from '../components/OpenWebUIChat';
-import { getJobs, analyzeJob } from '../services/api';
-import type { Job } from '../types';
+import { getJobs, analyzeJob, createTask } from '../services/api';
+import type { Job, SuggestedStep, AnalyzeJobResponse } from '../types';
 import { format } from 'date-fns';
 import './Jobs.css';
 
@@ -16,6 +16,9 @@ const Jobs = () => {
   const [analyzing, setAnalyzing] = useState<number | null>(null);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [showChat, setShowChat] = useState(false);
+  const [suggestionsJobId, setSuggestionsJobId] = useState<number | null>(null);
+  const [suggestedSteps, setSuggestedSteps] = useState<SuggestedStep[] | null>(null);
+  const [creatingTaskId, setCreatingTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     loadJobs();
@@ -46,6 +49,40 @@ const Jobs = () => {
       alert('Failed to analyze job. Please try again.');
     } finally {
       setAnalyzing(null);
+    }
+  };
+
+  const handleSuggestions = async (jobId: number) => {
+    setAnalyzing(jobId);
+    try {
+      const resp: AnalyzeJobResponse = await analyzeJob(jobId);
+      setSuggestionsJobId(jobId);
+      setSuggestedSteps(resp.suggested_next_steps || []);
+    } catch (error) {
+      console.error('Error getting suggestions:', error);
+      alert('Failed to get next steps. Please try again.');
+    } finally {
+      setAnalyzing(null);
+    }
+  };
+
+  const handleCreateTaskFromSuggestion = async (jobId: number, step: SuggestedStep) => {
+    setCreatingTaskId(step.id);
+    try {
+      await createTask({
+        job_id: jobId,
+        task_type: step.task_type,
+        title: step.title,
+        due_date: step.suggested_due_date,
+        notes: step.notes,
+        priority: 'medium',
+      });
+      alert('Task created');
+    } catch (error) {
+      console.error('Error creating task:', error);
+      alert('Failed to create task');
+    } finally {
+      setCreatingTaskId(null);
     }
   };
 
@@ -206,6 +243,14 @@ const Jobs = () => {
                   <Button
                     variant="ghost"
                     size="sm"
+                    onClick={() => handleSuggestions(job.id)}
+                    loading={analyzing === job.id}
+                  >
+                    Next steps
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     icon={<MessageSquare size={16} />}
                     onClick={() => handleChatWithJob(job)}
                   >
@@ -238,6 +283,45 @@ const Jobs = () => {
             }}
             onMinimize={() => setShowChat(false)}
           />
+        </div>
+      )}
+
+      {suggestionsJobId && suggestedSteps && (
+        <div className="jobs-suggestions-overlay">
+          <Card className="suggestions-card">
+            <div className="suggestions-header">
+              <h3>Next steps</h3>
+              <button className="close" onClick={() => { setSuggestionsJobId(null); setSuggestedSteps(null); }}>×</button>
+            </div>
+            <div className="suggestions-list">
+              {suggestedSteps.length === 0 ? (
+                <div className="empty-state">No suggestions available.</div>
+              ) : (
+                suggestedSteps.map((step) => (
+                  <div key={step.id} className="suggestion-item">
+                    <div className="suggestion-main">
+                      <div className="suggestion-label">{step.label}</div>
+                      <div className="suggestion-title">{step.title}</div>
+                      {step.notes && <div className="suggestion-notes">{step.notes}</div>}
+                      {step.suggested_due_date && (
+                        <div className="suggestion-due">Due: {new Date(step.suggested_due_date).toLocaleDateString()}</div>
+                      )}
+                    </div>
+                    <div className="suggestion-actions">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => handleCreateTaskFromSuggestion(suggestionsJobId, step)}
+                        loading={creatingTaskId === step.id}
+                      >
+                        Create task
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
         </div>
       )}
     </div>

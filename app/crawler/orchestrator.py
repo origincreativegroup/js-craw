@@ -17,6 +17,8 @@ from app.config import Settings, settings
 from app.ai.analyzer import JobAnalyzer
 from app.ai.job_filter import JobFilter
 from app.notifications.notifier import NotificationService
+from app.crawler.policies import PolicyRegistry
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,13 @@ class CrawlerOrchestrator:
         self._current_company_name: Optional[str] = None
         self._start_time: Optional[datetime] = None
         self._crawl_durations: List[float] = []  # Track durations for ETA calculation
+        # Per-domain rate limiting and circuit breaker
+        self._policies = PolicyRegistry(
+            rate_per_host=getattr(settings, 'HTTP_RATE_PER_HOST', 1.0),
+            burst=getattr(settings, 'HTTP_BURST_PER_HOST', 2),
+            failure_threshold=5,
+            reset_timeout_seconds=300,
+        )
     
     async def crawl_all_companies(self) -> List[Dict]:
         """
@@ -73,86 +82,109 @@ class CrawlerOrchestrator:
                 self._total_companies = len(companies)
 
                 logger.info(
-                    f"Crawling all {len(companies)} active companies (saving jobs immediately, AI analysis in batch)"
+                    f"Crawling all {len(companies)} active companies (parallel, saving immediately, AI analysis in batch)"
                 )
 
-                for idx, company in enumerate(companies):
-                    self._current_company_index = idx + 1
-                    self._current_company_name = company.name
-                    company_start = datetime.utcnow()
-                    if self._cancel_requested:
-                        logger.info("Crawl cancellation requested - stopping after current company")
-                        break
+                max_concurrent = getattr(settings, 'MAX_CONCURRENT_COMPANY_CRAWLS', 5)
+                semaphore = asyncio.Semaphore(max_concurrent)
 
-                    log = CrawlLog(
-                        search_criteria_id=None,
-                        company_id=company.id,
-                        platform=f"company_{company.id}",
-                        started_at=datetime.utcnow(),
-                        status='running'
-                    )
-                    db.add(log)
-                    await db.commit()
+                async def crawl_single(index: int, company: Company):
+                    async with semaphore:
+                        self._current_company_index = index + 1
+                        self._current_company_name = company.name
+                        company_start = datetime.utcnow()
+                        if self._cancel_requested:
+                            logger.info("Crawl cancellation requested - skipping remaining companies")
+                            return
 
-                    try:
-                        # Use fallback manager for crawling with timeout
-                        timeout_seconds = settings.CRAWL_TIMEOUT_SECONDS
-                        try:
-                            jobs, method_used = await asyncio.wait_for(
-                                self.fallback_manager.crawl_with_fallback(company),
-                                timeout=timeout_seconds
-                            )
-                            logger.info(f"Found {len(jobs)} jobs from {company.name} (method: {method_used})")
-                        except asyncio.TimeoutError:
-                            logger.error(f"Timeout crawling {company.name} after {timeout_seconds} seconds")
-                            log.status = 'failed'
-                            log.completed_at = datetime.utcnow()
-                            log.error_message = f"Timeout after {timeout_seconds} seconds"
-                            # Update company stats for timeout
-                            company.last_crawled_at = datetime.utcnow()
-                            company.consecutive_empty_crawls += 1
-                            await db.commit()
-                            continue
-
-                        new_jobs = await self._process_company_jobs(
-                            db,
-                            search=None,
-                            company=company,
-                            jobs=jobs,
-                            skip_ai_analysis=True
+                        log = CrawlLog(
+                            search_criteria_id=None,
+                            company_id=company.id,
+                            platform=f"company_{company.id}",
+                            started_at=datetime.utcnow(),
+                            status='running'
                         )
+                        db.add(log)
+                        await db.commit()
 
-                        all_new_job_ids.extend(job.id for job in new_jobs)
+                        try:
+                            timeout_seconds = settings.CRAWL_TIMEOUT_SECONDS
+                            try:
+                                # Determine domain key for policy
+                                domain_key = ''
+                                if company.career_page_url:
+                                    try:
+                                        domain_key = urlparse(company.career_page_url).netloc.lower()
+                                    except Exception:
+                                        domain_key = ''
+                                policy = self._policies.get_policy(domain_key or str(company.id))
+                                async def _op():
+                                    return await self.fallback_manager.crawl_with_fallback(company)
+                                jobs, method_used = await asyncio.wait_for(
+                                    policy.retry(lambda: policy.run(domain_key, _op)),
+                                    timeout=timeout_seconds
+                                )
+                                logger.info(f"Found {len(jobs)} jobs from {company.name} (method: {method_used})")
+                            except asyncio.TimeoutError:
+                                logger.error(f"Timeout crawling {company.name} after {timeout_seconds} seconds")
+                                log.status = 'failed'
+                                log.completed_at = datetime.utcnow()
+                                log.error_message = f"Timeout after {timeout_seconds} seconds"
+                                company.last_crawled_at = datetime.utcnow()
+                                company.consecutive_empty_crawls += 1
+                                await db.commit()
+                                return
 
-                        log.completed_at = datetime.utcnow()
-                        log.status = 'completed'
-                        log.jobs_found = len(jobs)
-                        log.new_jobs = len(new_jobs)
+                            # Incremental filtering using last_seen_ids from crawler_config
+                            cfg = company.crawler_config or {}
+                            last_seen: List[str] = cfg.get('last_seen_ids', []) if isinstance(cfg, dict) else []
+                            if last_seen:
+                                jobs = [j for j in jobs if j.get('external_id') not in last_seen]
 
-                        # Update company stats
-                        company.last_crawled_at = datetime.utcnow()
-                        if len(new_jobs) > 0:
-                            # Successful crawl - reset consecutive empty crawls
-                            company.consecutive_empty_crawls = 0
-                            company.last_successful_crawl = datetime.utcnow()
-                            company.jobs_found_total += len(new_jobs)
-                        else:
-                            # Empty crawl - increment counter
-                            company.consecutive_empty_crawls += 1
-                        
-                        # Track successful fallback method
-                        if method_used != "career_page" and method_used != "no_results":
-                            await self._record_fallback_success(db, company, method_used)
+                            new_jobs = await self._process_company_jobs(
+                                db,
+                                search=None,
+                                company=company,
+                                jobs=jobs,
+                                skip_ai_analysis=True
+                            )
 
-                        # Track duration for ETA calculation
-                        company_duration = (datetime.utcnow() - company_start).total_seconds()
-                        self._crawl_durations.append(company_duration)
-                        # Keep only last 10 durations for rolling average
-                        if len(self._crawl_durations) > 10:
-                            self._crawl_durations = self._crawl_durations[-10:]
+                            all_new_job_ids.extend(job.id for job in new_jobs)
 
-                        all_results.extend(
-                            [
+                            log.completed_at = datetime.utcnow()
+                            log.status = 'completed'
+                            log.jobs_found = len(jobs)
+                            log.new_jobs = len(new_jobs)
+
+                            company.last_crawled_at = datetime.utcnow()
+                            if len(new_jobs) > 0:
+                                company.consecutive_empty_crawls = 0
+                                company.last_successful_crawl = datetime.utcnow()
+                                company.jobs_found_total += len(new_jobs)
+                                # Update last_seen_ids (cap at 500)
+                                try:
+                                    cfg = company.crawler_config or {}
+                                    if not isinstance(cfg, dict):
+                                        cfg = {}
+                                    new_ids = [j.external_id for j in new_jobs if getattr(j, 'external_id', None)]
+                                    prev = cfg.get('last_seen_ids', [])
+                                    merged = (new_ids + prev)[:500]
+                                    cfg['last_seen_ids'] = merged
+                                    company.crawler_config = cfg
+                                except Exception:
+                                    pass
+                            else:
+                                company.consecutive_empty_crawls += 1
+
+                            if method_used != "career_page" and method_used != "no_results":
+                                await self._record_fallback_success(db, company, method_used)
+
+                            company_duration = (datetime.utcnow() - company_start).total_seconds()
+                            self._crawl_durations.append(company_duration)
+                            if len(self._crawl_durations) > 10:
+                                self._crawl_durations = self._crawl_durations[-10:]
+
+                            all_results.extend([
                                 {
                                     'id': job.id,
                                     'title': job.title,
@@ -161,32 +193,32 @@ class CrawlerOrchestrator:
                                     'ai_match_score': None,
                                 }
                                 for job in new_jobs
-                            ]
-                        )
+                            ])
 
-                        logger.info(
-                            f"✓ {company.name}: Found {len(jobs)} jobs, saved {len(new_jobs)} new jobs (AI analysis pending)"
-                        )
+                            logger.info(
+                                f"✓ {company.name}: Found {len(jobs)} jobs, saved {len(new_jobs)} new jobs (AI analysis pending)"
+                            )
+                        except Exception as e:
+                            logger.error(f"Error crawling company {company.name}: {e}", exc_info=True)
+                            log.status = 'failed'
+                            log.completed_at = datetime.utcnow()
+                            log.error_message = str(e)
+                            company_duration = (datetime.utcnow() - company_start).total_seconds()
+                            self._crawl_durations.append(company_duration)
+                            if len(self._crawl_durations) > 10:
+                                self._crawl_durations = self._crawl_durations[-10:]
+                            company.last_crawled_at = datetime.utcnow()
+                            company.consecutive_empty_crawls += 1
+                        finally:
+                            await db.commit()
 
-                    except Exception as e:
-                        logger.error(f"Error crawling company {company.name}: {e}", exc_info=True)
-                        log.status = 'failed'
-                        log.completed_at = datetime.utcnow()
-                        log.error_message = str(e)
-                        # Track failed duration
-                        company_duration = (datetime.utcnow() - company_start).total_seconds()
-                        self._crawl_durations.append(company_duration)
-                        if len(self._crawl_durations) > 10:
-                            self._crawl_durations = self._crawl_durations[-10:]
-                        # Update company stats for failure
-                        company.last_crawled_at = datetime.utcnow()
-                        company.consecutive_empty_crawls += 1
-
-                    await db.commit()
+                tasks = [crawl_single(idx, company) for idx, company in enumerate(companies)]
+                await asyncio.gather(*tasks)
 
             if all_new_job_ids and not self._cancel_requested:
                 logger.info(f"Starting batch AI analysis on {len(all_new_job_ids)} new jobs...")
-                asyncio.create_task(self._batch_analyze_jobs(all_new_job_ids))
+                batch_size = getattr(settings, 'AI_BATCH_SIZE', 20)
+                asyncio.create_task(self._batch_analyze_jobs(all_new_job_ids, batch_size=batch_size))
 
             # Reset progress tracking
             self._current_run_type = None
@@ -242,6 +274,9 @@ class CrawlerOrchestrator:
         results = await self._run_company_search(db, search)
 
         return results
+
+    def get_policy_metrics(self) -> Dict:
+        return self._policies.metrics()
 
     async def _process_jobs(self, db: AsyncSession, search: SearchCriteria, jobs: List[Dict], skip_ai_analysis: bool = False) -> List[Job]:
         """

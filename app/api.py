@@ -1,6 +1,6 @@
 """FastAPI routes"""
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
 from sqlalchemy.exc import IntegrityError
@@ -1087,7 +1087,11 @@ async def analyze_job(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    """Re-analyze a job with enhanced company profile analysis"""
+    """Re-analyze a job with enhanced company profile analysis.
+
+    Persists a concise AI summary on the job and returns non-persisted
+    suggested next steps for user action.
+    """
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one_or_none()
     
@@ -1096,6 +1100,7 @@ async def analyze_job(
     
     try:
         from app.ai.analyzer import JobAnalyzer
+        from app.ai.suggestions import build_next_steps
         analyzer = JobAnalyzer()
         
         job_data = {
@@ -1108,10 +1113,27 @@ async def analyze_job(
         
         # Run enhanced company profile analysis
         profile_analysis = await analyzer.analyze_company_job_profile(job_data, job.company)
-        
+        # Derive a concise AI summary for the job card
+        role_summary = (profile_analysis.get("role_summary") or "").strip()
+        company_profile = (profile_analysis.get("company_profile") or "").strip()
+        if role_summary:
+            derived_summary = role_summary
+        elif company_profile:
+            derived_summary = company_profile
+        else:
+            derived_summary = f"{job.title} at {job.company}."
+
+        # Persist summary on job
+        job.ai_summary = derived_summary[:600]
+        await db.commit()
+
+        # Build suggested next steps (not persisted)
+        suggested_next_steps = build_next_steps(job, profile_analysis)
+
         return {
             "job_id": job.id,
-            "analysis": profile_analysis
+            "analysis": profile_analysis,
+            "suggested_next_steps": suggested_next_steps,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error analyzing job: {str(e)}")
@@ -1572,6 +1594,38 @@ async def get_crawl_status(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading crawl status: {str(e)}")
+
+
+# Crawl metrics: expose policy registry breaker/rate states
+@router.get("/crawl/metrics")
+async def get_crawl_metrics(request: Request):
+    try:
+        orchestrator = request.app.state.crawler
+        return {"policies": orchestrator.get_policy_metrics()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Single-company crawl test (debug)
+@router.post("/companies/{company_id}/crawl-test")
+async def crawl_test_company(company_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Company).where(Company.id == company_id))
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    orchestrator = request.app.state.crawler
+    try:
+        jobs, method_used = await orchestrator.fallback_manager.crawl_with_fallback(company)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Crawl failed: {e}")
+
+    return {
+        "company": {"id": company.id, "name": company.name},
+        "method": method_used,
+        "jobs_found": len(jobs),
+        "sample": jobs[:5],
+    }
 
 
 # Scheduler metadata endpoint
