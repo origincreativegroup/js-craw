@@ -86,7 +86,7 @@ export interface PendingCompany {
   confidence_score: number;
   crawler_type: string;
   crawler_config?: any;
-  metadata?: any;
+  discovery_metadata?: any;
   created_at: string;
   updated_at: string;
 }
