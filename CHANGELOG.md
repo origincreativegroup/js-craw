@@ -1,6 +1,81 @@
 # Changelog
 
-## [Unreleased] React TypeScript Frontend Migration
+## [Latest] Automation & AI Enhancement - November 2025
+
+### Major Changes
+
+#### 1. Default Crawl Strategy Changed to "All Companies"
+- **Changed**: Default crawl type from `'searches'` to `'all'` companies
+- **Impact**: 
+  - All manual crawls now default to crawling all active companies
+  - Frontend trigger button now defaults to "All Companies" crawl
+  - Eliminates 400 errors when no active searches exist
+  - Better coverage of job opportunities across all companies
+- **Modified Files**:
+  - `app/api.py` - Default crawl_type parameter changed to `'all'`
+  - `frontend/src/services/api.ts` - Default triggerCrawl parameter changed to `'all'`
+
+#### 2. Periodic AI Job Summary & Ranking
+- **Added**: Hourly automated AI job analysis and ranking
+- **Schedule**: Runs every 60 minutes automatically
+- **Purpose**: Continuously analyze and rank newly discovered jobs
+- **Benefits**:
+  - Fresh AI analysis for all jobs as they're discovered
+  - Up-to-date match scores and recommendations
+  - No need to wait for daily processing
+- **Implementation**: 
+  - New scheduled job in `main.py`: `periodic_ai_job_summary`
+  - Uses `JobFilter.filter_and_rank_jobs()` for batch processing
+- **Modified Files**:
+  - `main.py` - Added periodic AI job summary scheduler
+
+#### 3. Daily AI Top Jobs Selection & Document Generation
+- **Added**: Automated daily workflow for top job selection and document generation
+- **Schedule**: Runs daily at 3:00 PM (configurable via `DAILY_GENERATION_TIME`)
+- **Workflow**:
+  1. Filters and ranks all jobs using AI
+  2. Selects top 5 jobs (configurable via `DAILY_TOP_JOBS_COUNT`)
+  3. Generates tailored resumes and cover letters for selected jobs
+- **Purpose**: Fully automated application preparation workflow
+- **Implementation**:
+  - New scheduled job in `main.py`: `daily_ai_selection_and_documents`
+  - Integrates `JobFilter.select_top_jobs()` and `DocumentGenerator.generate_both()`
+- **Modified Files**:
+  - `main.py` - Added daily AI selection and document generation scheduler
+
+### Technical Details
+
+#### Scheduler Configuration
+- **Periodic AI Summary**: Every 60 minutes (IntervalTrigger)
+- **Daily Top Jobs**: Daily at 15:00 (CronTrigger)
+- **Company Crawling**: Every 30 minutes (existing, unchanged)
+
+#### API Changes
+- `POST /api/crawl/run` - Default `crawl_type` parameter changed from `None` (searches) to `'all'`
+  - Backward compatible: `crawl_type='searches'` still works for search-based crawling
+  - New default behavior: Crawls all companies when no parameter specified
+
+#### Frontend Changes
+- `triggerCrawl()` function now defaults to `'all'` instead of `'searches'`
+- Automation page trigger button now uses "All Companies" crawl by default
+
+### Benefits
+
+1. **Better Coverage**: All companies crawled by default ensures no jobs are missed
+2. **Continuous AI Analysis**: Jobs are analyzed and ranked every hour, not just once daily
+3. **Automated Workflow**: Daily document generation for top jobs happens automatically
+4. **Reduced Errors**: Defaulting to "all" crawl eliminates 400 errors from missing searches
+5. **Improved UX**: Users can trigger crawls without needing active search criteria
+
+### Migration Notes
+
+- **No Breaking Changes**: Existing search-based crawling still works via `crawl_type='searches'`
+- **Configuration**: All schedules use existing config values from `app/config.py`
+- **User Profiles**: Document generation requires a user profile to be set up (see Settings page)
+
+---
+
+## [Previous] React TypeScript Frontend Migration
 
 ### Major Features
 

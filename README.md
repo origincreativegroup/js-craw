@@ -4,10 +4,11 @@ A comprehensive, production-ready job search automation system that crawls compa
 
 ## 🎯 Features
 
-- **Automated Crawling**: Company career pages and curated job board searches
-  every 30 minutes (configurable)
+- **Automated Crawling**: Crawls ALL active companies every 30 minutes (configurable)
 - **AI Analysis**: Local LLM (Ollama) for intelligent job matching and scoring
-- **AI Document Generation**: Automatically create tailored resumes and cover letters for top jobs
+  - Continuous ranking every 60 minutes
+  - Daily top 5 job selection at 3 PM
+- **AI Document Generation**: Automatically creates tailored resumes and cover letters for top jobs daily
 - **Ollama Verification**: Comprehensive health checks to ensure AI is working correctly
 - **Mobile Notifications**: Push alerts via ntfy, Pushover, or Telegram
 - **Web Dashboard**: Clean, responsive UI for managing everything
