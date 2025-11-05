@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { 
-  Settings as SettingsIcon, 
   CheckCircle, 
   AlertCircle, 
   RefreshCw, 

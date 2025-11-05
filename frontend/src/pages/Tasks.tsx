@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { CheckSquare, Sparkles, Clock, AlertCircle, Zap, Plus } from 'lucide-react';
+import { CheckSquare, Sparkles, Clock, AlertCircle, Plus } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
-import { getTasks, getTaskRecommendations, createTask, completeTask, generateTasksFromJob } from '../services/api';
+import { getTasks, getTaskRecommendations, completeTask, generateTasksFromJob } from '../services/api';
 import type { Task, TaskRecommendation } from '../types';
 import { format, parseISO, isPast } from 'date-fns';
 import './Tasks.css';

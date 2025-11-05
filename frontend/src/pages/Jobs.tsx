@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Search, Filter, Sparkles, ExternalLink, TrendingUp, MapPin, Building2, MessageSquare } from 'lucide-react';
+import { Search, Sparkles, ExternalLink, MapPin, Building2, MessageSquare } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import OpenWebUIChat from '../components/OpenWebUIChat';
@@ -16,7 +16,6 @@ const Jobs = () => {
   const [analyzing, setAnalyzing] = useState<number | null>(null);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [showChat, setShowChat] = useState(false);
-  const [sendingToOpenWebUI, setSendingToOpenWebUI] = useState<number | null>(null);
 
   useEffect(() => {
     loadJobs();
@@ -55,28 +54,6 @@ const Jobs = () => {
     setShowChat(true);
   };
 
-  const handleSendToOpenWebUI = async (jobId: number, promptType: 'analyze' | 'follow_up' | 'interview_prep' | 'cover_letter' = 'analyze') => {
-    setSendingToOpenWebUI(jobId);
-    try {
-      const result = await sendJobToOpenWebUI(jobId, promptType);
-      if (result.success) {
-        if (result.url) {
-          // Fallback: Open URL in new tab
-          window.open(result.url, '_blank');
-        } else if (result.chat_id) {
-          // Success: Chat created, show success message
-          alert('Job context sent to OpenWebUI! Check your OpenWebUI interface.');
-        }
-      } else {
-        alert(result.error || 'Failed to send to OpenWebUI');
-      }
-    } catch (error) {
-      console.error('Error sending to OpenWebUI:', error);
-      alert('Failed to send job to OpenWebUI. Please try again.');
-    } finally {
-      setSendingToOpenWebUI(null);
-    }
-  };
 
   const filteredJobs = jobs.filter((job) => {
     if (!searchTerm) return true;

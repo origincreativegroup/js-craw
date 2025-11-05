@@ -12,7 +12,6 @@ import type {
   Application,
   GeneratedDocument,
   SearchRecipe,
-  JobAction,
 } from '../types';
 
 const API_BASE = '/api';
