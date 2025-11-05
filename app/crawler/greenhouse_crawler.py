@@ -2,7 +2,7 @@
 import logging
 import httpx
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urljoin
 
 logger = logging.getLogger(__name__)
@@ -124,12 +124,18 @@ class GreenhouseCrawler:
                         job_type = meta.get("value")
                         break
 
-            # Parse posted date
+            # Parse posted date - convert timezone-aware to naive UTC
             posted_date = None
             updated_at = job_data.get("updated_at")
             if updated_at:
                 try:
-                    posted_date = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                    dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                    # Convert timezone-aware datetime to naive UTC
+                    if dt.tzinfo is not None:
+                        # Convert to UTC, then remove timezone info
+                        posted_date = dt.astimezone(timezone.utc).replace(tzinfo=None)
+                    else:
+                        posted_date = dt
                 except:
                     pass
 

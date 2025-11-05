@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from typing import List, Dict, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +13,7 @@ from app.crawler.generic_crawler import GenericCrawler
 from app.crawler.indeed_crawler import IndeedCrawler
 from app.crawler.linkedin_crawler import LinkedInCrawler
 from app.crawler.fallback_manager import CrawlFallbackManager
-from app.config import Settings
+from app.config import Settings, settings
 from app.ai.analyzer import JobAnalyzer
 from app.ai.job_filter import JobFilter
 from app.notifications.notifier import NotificationService
@@ -95,9 +95,24 @@ class CrawlerOrchestrator:
                     await db.commit()
 
                     try:
-                        # Use fallback manager for crawling
-                        jobs, method_used = await self.fallback_manager.crawl_with_fallback(company)
-                        logger.info(f"Found {len(jobs)} jobs from {company.name} (method: {method_used})")
+                        # Use fallback manager for crawling with timeout
+                        timeout_seconds = settings.CRAWL_TIMEOUT_SECONDS
+                        try:
+                            jobs, method_used = await asyncio.wait_for(
+                                self.fallback_manager.crawl_with_fallback(company),
+                                timeout=timeout_seconds
+                            )
+                            logger.info(f"Found {len(jobs)} jobs from {company.name} (method: {method_used})")
+                        except asyncio.TimeoutError:
+                            logger.error(f"Timeout crawling {company.name} after {timeout_seconds} seconds")
+                            log.status = 'failed'
+                            log.completed_at = datetime.utcnow()
+                            log.error_message = f"Timeout after {timeout_seconds} seconds"
+                            # Update company stats for timeout
+                            company.last_crawled_at = datetime.utcnow()
+                            company.consecutive_empty_crawls += 1
+                            await db.commit()
+                            continue
 
                         new_jobs = await self._process_company_jobs(
                             db,
@@ -156,12 +171,16 @@ class CrawlerOrchestrator:
                     except Exception as e:
                         logger.error(f"Error crawling company {company.name}: {e}", exc_info=True)
                         log.status = 'failed'
+                        log.completed_at = datetime.utcnow()
                         log.error_message = str(e)
                         # Track failed duration
                         company_duration = (datetime.utcnow() - company_start).total_seconds()
                         self._crawl_durations.append(company_duration)
                         if len(self._crawl_durations) > 10:
                             self._crawl_durations = self._crawl_durations[-10:]
+                        # Update company stats for failure
+                        company.last_crawled_at = datetime.utcnow()
+                        company.consecutive_empty_crawls += 1
 
                     await db.commit()
 
@@ -365,9 +384,24 @@ class CrawlerOrchestrator:
             await db.commit()
 
             try:
-                # Crawl company with fallback strategies
-                jobs, method_used = await self.fallback_manager.crawl_with_fallback(company)
-                logger.info(f"Found {len(jobs)} jobs from {company.name} (method: {method_used})")
+                # Crawl company with fallback strategies and timeout
+                timeout_seconds = settings.CRAWL_TIMEOUT_SECONDS
+                try:
+                    jobs, method_used = await asyncio.wait_for(
+                        self.fallback_manager.crawl_with_fallback(company),
+                        timeout=timeout_seconds
+                    )
+                    logger.info(f"Found {len(jobs)} jobs from {company.name} (method: {method_used})")
+                except asyncio.TimeoutError:
+                    logger.error(f"Timeout crawling {company.name} after {timeout_seconds} seconds")
+                    log.status = 'failed'
+                    log.completed_at = datetime.utcnow()
+                    log.error_message = f"Timeout after {timeout_seconds} seconds"
+                    # Update company stats for timeout
+                    company.last_crawled_at = datetime.utcnow()
+                    company.consecutive_empty_crawls += 1
+                    await db.commit()
+                    continue
 
                 # Filter jobs by search criteria (basic keyword/location filtering)
                 filtered_jobs = self._filter_jobs_by_criteria(jobs, search)
@@ -862,3 +896,53 @@ class CrawlerOrchestrator:
             'eta_seconds': eta_seconds,
             'start_time': self._start_time.isoformat() if self._start_time else None
         }
+    
+    async def cleanup_stuck_logs(self) -> Dict:
+        """
+        Clean up crawl logs that have been stuck in 'running' status for too long.
+        Marks them as 'failed' with a timeout error message.
+        
+        Returns:
+            Dict with cleanup statistics
+        """
+        threshold_minutes = settings.STUCK_LOG_CLEANUP_THRESHOLD_MINUTES
+        threshold = datetime.utcnow() - timedelta(minutes=threshold_minutes)
+        
+        async with AsyncSessionLocal() as db:
+            # Find all logs that are still 'running' and started before the threshold
+            result = await db.execute(
+                select(CrawlLog).where(
+                    CrawlLog.status == 'running',
+                    CrawlLog.started_at < threshold
+                )
+            )
+            stuck_logs = result.scalars().all()
+            
+            if not stuck_logs:
+                return {
+                    'cleaned': 0,
+                    'threshold_minutes': threshold_minutes,
+                    'message': 'No stuck logs found'
+                }
+            
+            # Mark each stuck log as failed
+            for log in stuck_logs:
+                duration_minutes = (datetime.utcnow() - log.started_at).total_seconds() / 60
+                log.status = 'failed'
+                log.completed_at = datetime.utcnow()
+                log.error_message = (
+                    f"Automatically marked as failed - stuck in 'running' status for "
+                    f"{duration_minutes:.1f} minutes (threshold: {threshold_minutes} minutes)"
+                )
+                logger.warning(
+                    f"Cleaned up stuck log {log.id} for company {log.company_id} "
+                    f"(stuck for {duration_minutes:.1f} minutes)"
+                )
+            
+            await db.commit()
+            
+            return {
+                'cleaned': len(stuck_logs),
+                'threshold_minutes': threshold_minutes,
+                'message': f"Cleaned up {len(stuck_logs)} stuck crawl log(s)"
+            }

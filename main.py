@@ -159,12 +159,32 @@ async def lifespan(app: FastAPI):
         replace_existing=True
     )
     
+    # Cleanup stuck crawl logs
+    async def cleanup_stuck_logs_job():
+        """Periodically clean up crawl logs stuck in 'running' status"""
+        try:
+            result = await orchestrator.cleanup_stuck_logs()
+            if result.get('cleaned', 0) > 0:
+                logger.info(f"Cleanup: {result['message']}")
+        except Exception as e:
+            logger.error(f"Error cleaning up stuck logs: {e}", exc_info=True)
+    
+    # Schedule stuck log cleanup
+    scheduler.add_job(
+        cleanup_stuck_logs_job,
+        trigger=IntervalTrigger(minutes=settings.STUCK_LOG_CLEANUP_INTERVAL_MINUTES),
+        id="cleanup_stuck_logs",
+        name="Cleanup stuck crawl logs",
+        replace_existing=True
+    )
+    
     scheduler.start()
     logger.info(f"Scheduler started:")
     logger.info(f"  - Crawling all companies every {settings.CRAWL_INTERVAL_MINUTES} minutes")
     logger.info(f"  - Refreshing company list daily at 2:00 AM")
     logger.info(f"  - Checking task reminders every {settings.TASK_REMINDER_CHECK_INTERVAL_MINUTES} minutes")
     logger.info(f"  - Checking OpenWebUI health every 5 minutes")
+    logger.info(f"  - Cleaning up stuck logs every {settings.STUCK_LOG_CLEANUP_INTERVAL_MINUTES} minutes")
     
     yield
     

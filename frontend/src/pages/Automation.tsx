@@ -132,7 +132,7 @@ const Automation = () => {
         <div>
           <h1 className="page-title">Automation & Control</h1>
           <p className="page-subtitle">
-            Manage crawling schedules, triggers, and system automation
+            Manage automated crawling of companies and jobs - schedules, triggers, and system automation
           </p>
         </div>
         <div className="automation-badge">
@@ -149,7 +149,7 @@ const Automation = () => {
               <Activity size={24} className="card-icon" />
               <div>
                 <h2 className="card-title">Crawl Status</h2>
-                <p className="card-subtitle">Current crawling activity</p>
+                <p className="card-subtitle">Crawling company career pages for new jobs</p>
               </div>
             </div>
             <div className={`status-indicator ${crawlStatus?.is_running ? 'running' : 'idle'}`}>
@@ -165,7 +165,7 @@ const Automation = () => {
                   <div className="progress-header">
                     <span>Progress</span>
                     <span className="progress-text">
-                      {crawlStatus.progress.current} / {crawlStatus.progress.total} companies
+                      {crawlStatus.progress.current} / {crawlStatus.progress.total} companies crawled
                     </span>
                   </div>
                   <div className="progress-bar">
@@ -180,7 +180,7 @@ const Automation = () => {
                 {crawlStatus.current_company && (
                   <div className="current-company">
                     <Building2 size={16} />
-                    <span>Currently crawling: <strong>{crawlStatus.current_company}</strong></span>
+                    <span>Currently crawling jobs from: <strong>{crawlStatus.current_company}</strong></span>
                   </div>
                 )}
                 {crawlStatus.eta_seconds && (

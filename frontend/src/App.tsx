@@ -9,6 +9,7 @@ import Companies from './pages/Companies';
 import Automation from './pages/Automation';
 import Settings from './pages/Settings';
 import Apply from './pages/Apply';
+import FilterProfile from './pages/FilterProfile';
 import './App.css';
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
           <Route path="/companies" element={<Companies />} />
           <Route path="/automation" element={<Automation />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/filter-profile" element={<FilterProfile />} />
         </Routes>
       </Layout>
     </Router>

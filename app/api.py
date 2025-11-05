@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel
@@ -1492,6 +1493,19 @@ async def resume_scheduler(request: Request):
         raise HTTPException(status_code=500, detail=f"Error resuming scheduler: {str(e)}")
 
 
+# Cleanup stuck crawl logs endpoint
+@router.post("/crawl/cleanup-stuck-logs")
+async def cleanup_stuck_logs(request: Request):
+    """Manually trigger cleanup of stuck crawl logs"""
+    try:
+        orchestrator = request.app.state.crawler
+        result = await orchestrator.cleanup_stuck_logs()
+        return result
+    except Exception as e:
+        logger.error(f"Error cleaning up stuck logs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error cleaning up stuck logs: {str(e)}")
+
+
 # Enhanced crawl logs endpoint
 @router.get("/crawl/logs")
 async def get_crawl_logs(
@@ -2149,7 +2163,7 @@ async def get_applications(
 ):
     """List applications with optional filters"""
     try:
-        query = select(Application).order_by(desc(Application.created_at))
+        query = select(Application).options(selectinload(Application.job)).order_by(desc(Application.created_at))
         
         if status:
             query = query.where(Application.status == status)
@@ -2195,7 +2209,7 @@ async def get_application(
 ):
     """Get application details"""
     try:
-        result = await db.execute(select(Application).where(Application.id == application_id))
+        result = await db.execute(select(Application).options(selectinload(Application.job)).where(Application.id == application_id))
         app = result.scalar_one_or_none()
         
         if not app:
@@ -2908,6 +2922,252 @@ async def test_notification(request: Request):
     except Exception as e:
         logger.error(f"Error testing notification: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error testing notification: {str(e)}")
+
+
+# User Profile endpoints
+class UserProfilePreferences(BaseModel):
+    """User preferences for job filtering"""
+    keywords: Optional[str] = None
+    location: Optional[str] = None
+    locations: Optional[List[str]] = None  # Multiple locations
+    remote_preferred: Optional[bool] = None
+    work_type: Optional[str] = None  # "remote", "office", "hybrid", "any"
+    experience_level: Optional[str] = None
+
+
+class UserProfileRead(BaseModel):
+    """User profile read model"""
+    id: int
+    user_id: Optional[int]
+    base_resume: Optional[str]
+    skills: Optional[List[str]]
+    experience: Optional[List[dict]]
+    education: Optional[dict]
+    preferences: Optional[dict]
+    created_at: str
+    updated_at: str
+    
+    class Config:
+        from_attributes = True
+
+
+class UserProfileUpdate(BaseModel):
+    """User profile update model - all fields optional"""
+    base_resume: Optional[str] = None
+    skills: Optional[List[str]] = None
+    experience: Optional[List[dict]] = None
+    education: Optional[dict] = None
+    preferences: Optional[UserProfilePreferences] = None
+
+
+@router.get("/user-profile")
+async def get_user_profile(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get current user profile (defaults to user_id=1)"""
+    try:
+        from app.models import UserProfile
+        
+        # For now, use user_id=1 (would use actual auth in production)
+        result = await db.execute(
+            select(UserProfile).where(UserProfile.user_id == 1)
+        )
+        user_profile = result.scalar_one_or_none()
+        
+        if not user_profile:
+            # Return empty profile structure
+            return {
+                "id": None,
+                "user_id": 1,
+                "base_resume": None,
+                "skills": [],
+                "experience": [],
+                "education": None,
+                "preferences": {
+                    "keywords": None,
+                    "location": None,
+                    "locations": [],
+                    "remote_preferred": True,
+                    "work_type": "any",
+                    "experience_level": None
+                },
+                "created_at": None,
+                "updated_at": None
+            }
+        
+        # Convert preferences dict if it exists
+        prefs = user_profile.preferences or {}
+        
+        return {
+            "id": user_profile.id,
+            "user_id": user_profile.user_id,
+            "base_resume": user_profile.base_resume,
+            "skills": user_profile.skills or [],
+            "experience": user_profile.experience or [],
+            "education": user_profile.education,
+            "preferences": {
+                "keywords": prefs.get("keywords"),
+                "location": prefs.get("location"),
+                "locations": prefs.get("locations", []),
+                "remote_preferred": prefs.get("remote_preferred", True),
+                "work_type": prefs.get("work_type", "any"),
+                "experience_level": prefs.get("experience_level")
+            },
+            "created_at": user_profile.created_at.isoformat() if user_profile.created_at else None,
+            "updated_at": user_profile.updated_at.isoformat() if user_profile.updated_at else None
+        }
+    except Exception as e:
+        logger.error(f"Error getting user profile: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting user profile: {str(e)}")
+
+
+@router.post("/user-profile")
+async def create_user_profile(
+    request: Request,
+    profile: UserProfileUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new user profile"""
+    try:
+        from app.models import UserProfile
+        
+        # Check if profile already exists for user_id=1
+        result = await db.execute(
+            select(UserProfile).where(UserProfile.user_id == 1)
+        )
+        existing = result.scalar_one_or_none()
+        
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail="User profile already exists. Use PATCH to update."
+            )
+        
+        # Build preferences dict
+        prefs_dict = None
+        if profile.preferences:
+            prefs_dict = {
+                "keywords": profile.preferences.keywords,
+                "location": profile.preferences.location,
+                "locations": profile.preferences.locations or [],
+                "remote_preferred": profile.preferences.remote_preferred if profile.preferences.remote_preferred is not None else True,
+                "work_type": profile.preferences.work_type or "any",
+                "experience_level": profile.preferences.experience_level
+            }
+        
+        new_profile = UserProfile(
+            user_id=1,
+            base_resume=profile.base_resume,
+            skills=profile.skills,
+            experience=profile.experience,
+            education=profile.education,
+            preferences=prefs_dict
+        )
+        
+        db.add(new_profile)
+        await db.commit()
+        await db.refresh(new_profile)
+        
+        prefs = new_profile.preferences or {}
+        return {
+            "id": new_profile.id,
+            "user_id": new_profile.user_id,
+            "base_resume": new_profile.base_resume,
+            "skills": new_profile.skills or [],
+            "experience": new_profile.experience or [],
+            "education": new_profile.education,
+            "preferences": {
+                "keywords": prefs.get("keywords"),
+                "location": prefs.get("location"),
+                "locations": prefs.get("locations", []),
+                "remote_preferred": prefs.get("remote_preferred", True),
+                "work_type": prefs.get("work_type", "any"),
+                "experience_level": prefs.get("experience_level")
+            },
+            "created_at": new_profile.created_at.isoformat() if new_profile.created_at else None,
+            "updated_at": new_profile.updated_at.isoformat() if new_profile.updated_at else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating user profile: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error creating user profile: {str(e)}")
+
+
+@router.patch("/user-profile")
+async def update_user_profile(
+    request: Request,
+    profile: UserProfileUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update existing user profile"""
+    try:
+        from app.models import UserProfile
+        
+        # Get existing profile for user_id=1
+        result = await db.execute(
+            select(UserProfile).where(UserProfile.user_id == 1)
+        )
+        user_profile = result.scalar_one_or_none()
+        
+        if not user_profile:
+            # Create new profile if it doesn't exist
+            return await create_user_profile(request, profile, db)
+        
+        # Update fields if provided
+        if profile.base_resume is not None:
+            user_profile.base_resume = profile.base_resume
+        if profile.skills is not None:
+            user_profile.skills = profile.skills
+        if profile.experience is not None:
+            user_profile.experience = profile.experience
+        if profile.education is not None:
+            user_profile.education = profile.education
+        if profile.preferences is not None:
+            # Merge preferences with existing
+            existing_prefs = user_profile.preferences or {}
+            prefs_dict = {
+                "keywords": profile.preferences.keywords if profile.preferences.keywords is not None else existing_prefs.get("keywords"),
+                "location": profile.preferences.location if profile.preferences.location is not None else existing_prefs.get("location"),
+                "locations": profile.preferences.locations if profile.preferences.locations is not None else existing_prefs.get("locations", []),
+                "remote_preferred": profile.preferences.remote_preferred if profile.preferences.remote_preferred is not None else existing_prefs.get("remote_preferred", True),
+                "work_type": profile.preferences.work_type if profile.preferences.work_type is not None else existing_prefs.get("work_type", "any"),
+                "experience_level": profile.preferences.experience_level if profile.preferences.experience_level is not None else existing_prefs.get("experience_level")
+            }
+            user_profile.preferences = prefs_dict
+        
+        user_profile.updated_at = datetime.utcnow()
+        
+        await db.commit()
+        await db.refresh(user_profile)
+        
+        prefs = user_profile.preferences or {}
+        return {
+            "id": user_profile.id,
+            "user_id": user_profile.user_id,
+            "base_resume": user_profile.base_resume,
+            "skills": user_profile.skills or [],
+            "experience": user_profile.experience or [],
+            "education": user_profile.education,
+            "preferences": {
+                "keywords": prefs.get("keywords"),
+                "location": prefs.get("location"),
+                "locations": prefs.get("locations", []),
+                "remote_preferred": prefs.get("remote_preferred", True),
+                "work_type": prefs.get("work_type", "any"),
+                "experience_level": prefs.get("experience_level")
+            },
+            "created_at": user_profile.created_at.isoformat() if user_profile.created_at else None,
+            "updated_at": user_profile.updated_at.isoformat() if user_profile.updated_at else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating user profile: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating user profile: {str(e)}")
 
 
 # AI Chat endpoint

@@ -186,3 +186,58 @@ export interface JobAction {
   metadata?: Record<string, any>;
 }
 
+export interface UserProfilePreferences {
+  keywords?: string;
+  location?: string;
+  locations?: string[];
+  remote_preferred?: boolean;
+  work_type?: 'remote' | 'office' | 'hybrid' | 'any';
+  experience_level?: string;
+}
+
+export interface UserProfile {
+  id: number | null;
+  user_id: number | null;
+  base_resume: string | null;
+  skills: string[];
+  experience: Array<{
+    company?: string;
+    role?: string;
+    start_date?: string;
+    end_date?: string;
+    description?: string;
+    [key: string]: any;
+  }>;
+  education: {
+    degree?: string;
+    field?: string;
+    institution?: string;
+    graduation_date?: string;
+    [key: string]: any;
+  } | null;
+  preferences: UserProfilePreferences;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface UserProfileUpdate {
+  base_resume?: string;
+  skills?: string[];
+  experience?: Array<{
+    company?: string;
+    role?: string;
+    start_date?: string;
+    end_date?: string;
+    description?: string;
+    [key: string]: any;
+  }>;
+  education?: {
+    degree?: string;
+    field?: string;
+    institution?: string;
+    graduation_date?: string;
+    [key: string]: any;
+  };
+  preferences?: UserProfilePreferences;
+}
+

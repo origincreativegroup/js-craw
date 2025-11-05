@@ -9,7 +9,8 @@ import {
   Settings,
   Sparkles,
   Compass,
-  FileText
+  FileText,
+  Filter
 } from 'lucide-react';
 import './Layout.css';
 
@@ -29,6 +30,7 @@ const Layout = ({ children }: LayoutProps) => {
     { path: '/follow-ups', icon: Calendar, label: 'Follow-ups' },
     { path: '/companies', icon: Building2, label: 'Companies' },
     { path: '/automation', icon: Settings, label: 'Automation' },
+    { path: '/filter-profile', icon: Filter, label: 'Filter Profile' },
     { path: '/settings', icon: Settings, label: 'Settings' },
   ];
 

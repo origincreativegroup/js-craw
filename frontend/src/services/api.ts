@@ -12,6 +12,8 @@ import type {
   Application,
   GeneratedDocument,
   SearchRecipe,
+  UserProfile,
+  UserProfileUpdate,
 } from '../types';
 
 const API_BASE = '/api';
@@ -322,6 +324,22 @@ export const toggleTaskNotification = async (taskId: number, enabled: boolean): 
   const response = await api.post(`/tasks/${taskId}/notify`, null, {
     params: { enabled },
   });
+  return response.data;
+};
+
+// User Profile endpoints
+export const getUserProfile = async (): Promise<UserProfile> => {
+  const response = await api.get('/user-profile');
+  return response.data;
+};
+
+export const createUserProfile = async (data: UserProfileUpdate): Promise<UserProfile> => {
+  const response = await api.post('/user-profile', data);
+  return response.data;
+};
+
+export const updateUserProfile = async (data: UserProfileUpdate): Promise<UserProfile> => {
+  const response = await api.patch('/user-profile', data);
   return response.data;
 };
 

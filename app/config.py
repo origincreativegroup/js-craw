@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     DAILY_TOP_JOBS_COUNT: int = 5
     DAILY_GENERATION_TIME: str = "15:00"  # 3 PM in HH:MM format
     
+    # Crawl timeout settings
+    CRAWL_TIMEOUT_SECONDS: int = 300  # 5 minutes timeout per company crawl
+    STUCK_LOG_CLEANUP_THRESHOLD_MINUTES: int = 60  # Mark logs as failed if running longer than this
+    STUCK_LOG_CLEANUP_INTERVAL_MINUTES: int = 15  # How often to check for stuck logs
+    
     # Document Generation
     RESUME_STORAGE_PATH: str = "/app/data/resumes"
     COVER_LETTER_STORAGE_PATH: str = "/app/data/cover_letters"

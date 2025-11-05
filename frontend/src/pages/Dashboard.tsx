@@ -48,7 +48,7 @@ const Dashboard = () => {
       <div className="dashboard-header">
         <div>
           <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">AI-Powered Job Search Overview</p>
+          <p className="page-subtitle">AI-Powered Job Search - Crawling Companies & Jobs</p>
         </div>
         <div className="crawler-status-badge">
           {crawlStatus?.is_running ? (
@@ -56,7 +56,7 @@ const Dashboard = () => {
           ) : (
             <span className="status-indicator idle"></span>
           )}
-          {crawlStatus?.is_running ? 'Crawling...' : 'Idle'}
+          {crawlStatus?.is_running ? 'Crawling Companies & Jobs...' : 'Idle'}
         </div>
       </div>
 
@@ -144,6 +144,9 @@ const Dashboard = () => {
         <Card className="crawl-status-card">
           <div className="card-header">
             <h2 className="card-title">Crawl Status</h2>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              Automatically crawling company career pages for new jobs
+            </p>
           </div>
           <div className="crawl-info">
             {crawlStatus?.is_running ? (
@@ -158,12 +161,12 @@ const Dashboard = () => {
                     />
                   </div>
                   <div className="progress-text">
-                    {crawlStatus.progress.current} / {crawlStatus.progress.total} companies
+                    {crawlStatus.progress.current} / {crawlStatus.progress.total} companies crawled
                   </div>
                 </div>
                 {crawlStatus.current_company && (
                   <div className="current-company">
-                    Currently crawling: <strong>{crawlStatus.current_company}</strong>
+                    Currently crawling jobs from: <strong>{crawlStatus.current_company}</strong>
                   </div>
                 )}
                 {crawlStatus.eta_seconds && (
@@ -173,7 +176,12 @@ const Dashboard = () => {
                 )}
               </>
             ) : (
-              <div className="idle-message">Crawler is idle</div>
+              <div className="idle-message">
+                Crawler is idle. Next crawl scheduled automatically.
+                <div style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                  Monitoring {crawlStatus?.active_companies || 0} active companies for new job postings.
+                </div>
+              </div>
             )}
           </div>
         </Card>
