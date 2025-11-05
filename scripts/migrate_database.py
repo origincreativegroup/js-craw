@@ -301,6 +301,43 @@ async def run_migration():
         else:
             print("  ⊘ applications table already exists")
         
+        # Check if pending_companies table exists
+        result = await conn.execute(
+            text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'pending_companies'
+                )
+            """)
+        )
+        pending_companies_exists = result.scalar()
+        
+        if not pending_companies_exists:
+            print("  Creating pending_companies table...")
+            await conn.execute(text("""
+                CREATE TABLE pending_companies (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL UNIQUE,
+                    career_page_url TEXT NOT NULL,
+                    discovery_source VARCHAR(50) NOT NULL,
+                    confidence_score REAL NOT NULL,
+                    crawler_type VARCHAR(50) NOT NULL,
+                    crawler_config JSONB,
+                    metadata JSONB,
+                    status VARCHAR(20) DEFAULT 'pending',
+                    reviewed_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            await conn.execute(text("CREATE INDEX ix_pending_companies_name ON pending_companies(name)"))
+            await conn.execute(text("CREATE INDEX ix_pending_companies_confidence_score ON pending_companies(confidence_score)"))
+            await conn.execute(text("CREATE INDEX ix_pending_companies_status ON pending_companies(status)"))
+            await conn.execute(text("CREATE INDEX ix_pending_companies_created_at ON pending_companies(created_at)"))
+            print("  ✓ pending_companies table created")
+        else:
+            print("  ⊘ pending_companies table already exists")
+        
         # Check if notify_enabled column exists in tasks table
         result = await conn.execute(
             text("""
