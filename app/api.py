@@ -1,20 +1,38 @@
 """FastAPI routes"""
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, Query, Body, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models import Job, SearchCriteria, User, FollowUp, CrawlLog, Company, Task, Application, GeneratedDocument
+from app.models import (
+    Job,
+    SearchCriteria,
+    User,
+    FollowUp,
+    CrawlLog,
+    Company,
+    Task,
+    Application,
+    GeneratedDocument,
+    UserDocument,
+)
 from app.utils.crypto import encrypt_password
 from app.crawler.orchestrator import CrawlerOrchestrator
 from app.tasks.task_service import TaskService
 from app.ai.task_generator import TaskGenerator
+from app.ai.job_fit_advisor import JobFitAdvisor
+from app.ai.application_builder import TailoredApplicationBuilder
+from app.services.document_library import (
+    UserDocumentService,
+    DocumentIngestionError,
+    summarize_documents,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -142,6 +160,33 @@ class DocumentGenerate(BaseModel):
 
 class DocumentUpdate(BaseModel):
     content: str
+
+
+class UserDocumentUpdate(BaseModel):
+    content: Optional[str] = None
+    metadata: Optional[Dict] = None
+
+
+class JobFitRequest(BaseModel):
+    job_title: Optional[str] = None
+    company: Optional[str] = None
+    job_description: str
+    requirements: Optional[str] = None
+    user_summary: Optional[str] = None
+    user_skills: List[str] = []
+    user_experience: Optional[str] = None
+    supporting_document_ids: Optional[List[int]] = None
+
+
+class TailoredDocumentRequest(BaseModel):
+    job_title: str
+    company: str
+    job_description: str
+    requirements: Optional[str] = None
+    user_summary: Optional[str] = None
+    user_skills: List[str] = []
+    document_ids: List[int] = []
+    document_types: List[str] = ["resume", "cover_letter"]
 
 
 # Search Criteria endpoints
@@ -2825,6 +2870,182 @@ async def finalize_document(
         await db.rollback()
         logger.error(f"Error finalizing document: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/user-documents/upload")
+async def upload_user_documents(
+    files: List[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload one or more user-provided documents for AI analysis"""
+    service = UserDocumentService(db)
+    created_docs = []
+
+    for file in files:
+        try:
+            doc = await service.ingest_upload(file)
+            created_docs.append({
+                "id": doc.id,
+                "filename": doc.filename,
+                "file_type": doc.file_type,
+                "content": doc.content,
+                "metadata": doc.metadata_json,
+                "created_at": doc.created_at.isoformat(),
+            })
+        except DocumentIngestionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:  # pragma: no cover - network
+            logger.error("Failed to ingest document: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="Failed to ingest document")
+
+    return {"documents": created_docs}
+
+
+@router.get("/user-documents")
+async def list_user_documents(
+    db: AsyncSession = Depends(get_db)
+):
+    service = UserDocumentService(db)
+    documents = await service.list_documents()
+    return [
+        {
+            "id": doc.id,
+            "filename": doc.filename,
+            "file_type": doc.file_type,
+            "content": doc.content,
+            "metadata": doc.metadata_json,
+            "created_at": doc.created_at.isoformat(),
+            "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+        }
+        for doc in documents
+    ]
+
+
+@router.get("/user-documents/{document_id}")
+async def get_user_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    service = UserDocumentService(db)
+    doc = await service.get_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "file_type": doc.file_type,
+        "content": doc.content,
+        "metadata": doc.metadata_json,
+        "created_at": doc.created_at.isoformat(),
+        "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+    }
+
+
+@router.patch("/user-documents/{document_id}")
+async def update_user_document(
+    document_id: int,
+    update: UserDocumentUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    service = UserDocumentService(db)
+    if update.content is None and update.metadata is None:
+        raise HTTPException(status_code=400, detail="No updates provided")
+
+    current = await service.get_document(document_id)
+    if not current:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    new_content = update.content if update.content is not None else current.content
+    doc = await service.update_document(document_id, new_content, update.metadata)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "file_type": doc.file_type,
+        "content": doc.content,
+        "metadata": doc.metadata_json,
+        "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
+    }
+
+
+@router.delete("/user-documents/{document_id}")
+async def delete_user_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    service = UserDocumentService(db)
+    success = await service.delete_document(document_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"message": "Document deleted", "document_id": document_id}
+
+
+@router.post("/ai/job-fit")
+async def analyze_job_fit(
+    payload: JobFitRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    advisor = JobFitAdvisor()
+    supporting_text = ""
+    documents_used: List[int] = []
+
+    if payload.supporting_document_ids:
+        result = await db.execute(
+            select(UserDocument).where(UserDocument.id.in_(payload.supporting_document_ids))
+        )
+        docs = result.scalars().all()
+        documents_used = [doc.id for doc in docs]
+        supporting_text = summarize_documents(docs)
+
+    analysis = await advisor.evaluate(
+        job_title=payload.job_title,
+        company=payload.company,
+        job_description=payload.job_description,
+        requirements=payload.requirements,
+        user_summary=payload.user_summary,
+        user_skills=payload.user_skills,
+        user_experience=payload.user_experience,
+        supporting_material=supporting_text,
+    )
+
+    return {
+        "analysis": analysis,
+        "documents_used": documents_used,
+    }
+
+
+@router.post("/ai/tailored-documents")
+async def generate_tailored_documents(
+    payload: TailoredDocumentRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    builder = TailoredApplicationBuilder()
+
+    documents = []
+    if payload.document_ids:
+        result = await db.execute(
+            select(UserDocument).where(UserDocument.id.in_(payload.document_ids))
+        )
+        documents = result.scalars().all()
+
+    portfolio_text = summarize_documents(documents)
+
+    generated = await builder.generate_documents(
+        job_title=payload.job_title,
+        company=payload.company,
+        job_description=payload.job_description,
+        requirements=payload.requirements,
+        user_summary=payload.user_summary,
+        user_skills=payload.user_skills,
+        portfolio_content=portfolio_text,
+        document_types=payload.document_types,
+    )
+
+    return {
+        "documents": generated,
+        "used_documents": [doc.id for doc in documents],
+    }
 
 
 # Search recipes endpoint

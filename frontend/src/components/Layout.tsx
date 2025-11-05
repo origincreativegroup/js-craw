@@ -11,7 +11,8 @@ import {
   Compass,
   FileText,
   Filter,
-  Search
+  Search,
+  Wand2
 } from 'lucide-react';
 import './Layout.css';
 
@@ -27,6 +28,7 @@ const Layout = ({ children }: LayoutProps) => {
     { path: '/discovery', icon: Compass, label: 'Discover' },
     { path: '/jobs', icon: Briefcase, label: 'Jobs' },
     { path: '/apply', icon: FileText, label: 'Apply' },
+    { path: '/copilot', icon: Wand2, label: 'Career Copilot' },
     { path: '/tasks', icon: CheckSquare, label: 'Tasks' },
     { path: '/follow-ups', icon: Calendar, label: 'Follow-ups' },
     { path: '/companies', icon: Building2, label: 'Companies' },

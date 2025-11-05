@@ -1,5 +1,5 @@
 """Database models"""
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, ForeignKey, JSON, LargeBinary
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -196,6 +196,25 @@ class UserProfile(Base):
     
     # Relationships
     user = relationship("User")
+    documents = relationship("UserDocument", back_populates="profile")
+
+
+class UserDocument(Base):
+    """User-provided documents that can be analyzed and reused"""
+    __tablename__ = "user_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_profile_id = Column(Integer, ForeignKey("user_profiles.id"), nullable=True, index=True)
+    filename = Column(String(255), nullable=False)
+    file_type = Column(String(50), nullable=False)
+    content = Column(Text, nullable=False)
+    raw_file = Column(LargeBinary, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    profile = relationship("UserProfile", back_populates="documents")
 
 
 class GeneratedDocument(Base):
