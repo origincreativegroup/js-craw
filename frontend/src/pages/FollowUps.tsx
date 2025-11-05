@@ -4,7 +4,7 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import AIChat from '../components/AIChat';
 import OpenWebUIChat from '../components/OpenWebUIChat';
-import { getFollowUpRecommendations, createFollowUp, getJobs } from '../services/api';
+import { getFollowUpRecommendations, createFollowUp } from '../services/api';
 import type { FollowUpRecommendation } from '../types';
 import { format, parseISO, addDays } from 'date-fns';
 import './FollowUps.css';

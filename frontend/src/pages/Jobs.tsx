@@ -3,7 +3,7 @@ import { Search, Sparkles, ExternalLink, MapPin, Building2, MessageSquare } from
 import Card from '../components/Card';
 import Button from '../components/Button';
 import OpenWebUIChat from '../components/OpenWebUIChat';
-import { getJobs, analyzeJob, sendJobToOpenWebUI } from '../services/api';
+import { getJobs, analyzeJob } from '../services/api';
 import type { Job } from '../types';
 import { format } from 'date-fns';
 import './Jobs.css';

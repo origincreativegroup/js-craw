@@ -44,7 +44,7 @@ const Apply = () => {
   const [loading, setLoading] = useState(true);
   const [documents, setDocuments] = useState<Record<number, GeneratedDocument[]>>({});
   const [generating, setGenerating] = useState<number | null>(null);
-  const [updating, setUpdating] = useState<number | null>(null);
+  const [_updating, setUpdating] = useState<number | null>(null);
   const [expandedApp, setExpandedApp] = useState<number | null>(null);
   const [formData, setFormData] = useState<Record<number, { portal_url?: string; confirmation_number?: string; notes?: string }>>({});
 
@@ -278,7 +278,7 @@ const Apply = () => {
                                 Generated {format(new Date(resume.generated_at), 'MMM d, yyyy')}
                               </p>
                               <Button
-                                variant="outline"
+                                variant="secondary"
                                 size="sm"
                                 icon={<Download size={16} />}
                                 onClick={() => {
@@ -321,7 +321,7 @@ const Apply = () => {
                                 Generated {format(new Date(coverLetter.generated_at), 'MMM d, yyyy')}
                               </p>
                               <Button
-                                variant="outline"
+                                variant="secondary"
                                 size="sm"
                                 icon={<Download size={16} />}
                                 onClick={() => {
@@ -437,7 +437,7 @@ const Apply = () => {
                     {app.job?.url && (
                       <div className="job-link">
                         <Button
-                          variant="outline"
+                          variant="secondary"
                           size="md"
                           icon={<ArrowRight size={16} />}
                           onClick={() => window.open(app.job!.url, '_blank')}

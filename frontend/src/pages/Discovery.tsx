@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, Building2 } from 'lucide-react';
+import { Building2 } from 'lucide-react';
 import JobCard from '../components/JobCard';
 import Card from '../components/Card';
 import { getJobs, queueJobForApplication, markJobHighPriority } from '../services/api';
@@ -10,8 +10,8 @@ const Discovery = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>('high_match');
-  const [queueing, setQueueing] = useState<number | null>(null);
-  const [marking, setMarking] = useState<number | null>(null);
+  const [_queueing, setQueueing] = useState<number | null>(null);
+  const [_marking, setMarking] = useState<number | null>(null);
 
   useEffect(() => {
     loadJobs();
