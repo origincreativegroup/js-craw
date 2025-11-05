@@ -824,7 +824,7 @@ async def get_pending_companies(
                 "confidence_score": p.confidence_score,
                 "crawler_type": p.crawler_type,
                 "crawler_config": p.crawler_config,
-                "metadata": p.metadata,
+                "discovery_metadata": p.discovery_metadata,
                 "created_at": p.created_at.isoformat(),
                 "updated_at": p.updated_at.isoformat()
             }

@@ -323,7 +323,7 @@ async def run_migration():
                     confidence_score REAL NOT NULL,
                     crawler_type VARCHAR(50) NOT NULL,
                     crawler_config JSONB,
-                    metadata JSONB,
+                    discovery_metadata JSONB,
                     status VARCHAR(20) DEFAULT 'pending',
                     reviewed_at TIMESTAMP,
                     created_at TIMESTAMP DEFAULT NOW(),

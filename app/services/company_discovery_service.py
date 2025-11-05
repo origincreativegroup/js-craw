@@ -121,7 +121,7 @@ async def process_and_insert_discovered_companies(
                         confidence_score=confidence_score,
                         crawler_type=crawler_type,
                         crawler_config=crawler_config,
-                        metadata=record.metadata,
+                        discovery_metadata=record.metadata,
                         status="pending"
                     )
                     

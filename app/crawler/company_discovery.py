@@ -463,7 +463,7 @@ class CompanyDiscoveryService:
                 "name": record.name,
                 "career_page_url": record.career_page_url,
                 "source": record.source,
-                "metadata": record.metadata,
+                "discovery_metadata": record.metadata,
                 "priority": record.priority
             })
         

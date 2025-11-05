@@ -67,7 +67,7 @@ class PendingCompany(Base):
     confidence_score = Column(Float, nullable=False, index=True)  # AI confidence score 0-100
     crawler_type = Column(String(50), nullable=False)  # greenhouse, lever, workday, generic
     crawler_config = Column(JSON, nullable=True)
-    metadata = Column(JSON, nullable=True)  # Additional discovery metadata
+    discovery_metadata = Column(JSON, nullable=True)  # Additional discovery metadata
     status = Column(String(20), default="pending", index=True)  # pending, approved, rejected
     reviewed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
