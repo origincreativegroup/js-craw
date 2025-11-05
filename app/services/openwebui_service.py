@@ -52,9 +52,11 @@ class OpenWebUIService:
         try:
             # Try common health/status endpoints
             health_endpoints = [
-                "/api/v1/config",
+                "/api/v1/configs",
                 "/api/v1/health",
+                "/api/health",
                 "/health",
+                "/api/v1/models",
                 "/api/config"
             ]
             
@@ -76,10 +78,18 @@ class OpenWebUIService:
                                 config_data = response.json()
                                 if isinstance(config_data, dict):
                                     # Check for common OpenWebUI config keys
-                                    if "version" in config_data or "models" in config_data:
+                                    if "version" in config_data or "models" in config_data or "data" in config_data:
                                         capabilities.append("api")
                             except:
+                                # If we get 200 but not JSON, it's still accessible
                                 pass
+                            break
+                        elif response.status_code == 401:
+                            # Authentication required but service is online
+                            status = "online_auth_required"
+                            message = "OpenWebUI is accessible but requires authentication"
+                            capabilities.append("http_access")
+                            capabilities.append("auth_required")
                             break
                     except Exception as e:
                         logger.debug(f"Health check failed for {endpoint}: {e}")
