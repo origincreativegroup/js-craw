@@ -16,12 +16,19 @@ A comprehensive, production-ready job search automation system that crawls compa
 
 ### 🆕 New Features
 
+- **React TypeScript Frontend**: Modern, component-based UI with React 18.2 and TypeScript
+  - Full client-side routing with React Router
+  - Real-time data updates via polling
+  - Type-safe API integration
+  - Optimized builds with Vite
+  - Responsive design with CSS modules
 - **Automation Command Center**: Real-time monitoring and control dashboard
   - Real-time telemetry (status, progress, ETA, queue length)
   - Timeline visualization of automation events
   - Per-automation health chips with color-coded indicators
   - Drill-down panels for crawler type analysis
   - Full automation control (pause/resume, adjust interval, cancel)
+- **Company Data Pipeline**: Automated company crawl pipeline with filtering and verification
 - **Document Generator**: Automatically generate tailored resumes and cover letters using AI
 - **Ollama Verifier**: Verify and test Ollama connection and functionality
 - **Comprehensive Testing**: Full test suite for AI features
@@ -59,8 +66,17 @@ js-craw/
 │   └── utils/                     # Utilities
 │       ├── __init__.py
 │       └── crypto.py              # Password encryption
-├── static/                        # Frontend files
-│   └── index.html                 # Web dashboard
+├── frontend/                      # React TypeScript frontend (source)
+│   ├── src/                       # Source code
+│   │   ├── components/           # Reusable UI components
+│   │   ├── pages/                # Page components
+│   │   ├── services/             # API service layer
+│   │   └── types/                # TypeScript definitions
+│   ├── package.json              # Frontend dependencies
+│   └── vite.config.ts            # Build configuration
+├── static/                        # Frontend build output (served by FastAPI)
+│   ├── index.html                # Main HTML entry point
+│   └── assets/                   # Compiled JS/CSS assets
 ├── scripts/                       # Utility scripts
 │   └── diagnose.sh                # Diagnostic script
 ├── docs/                          # Documentation
@@ -250,11 +266,11 @@ sources.
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| job-crawler | 8001 | Main application |
+| job-crawler | 8001 | Main application (FastAPI + React frontend) |
 | postgres | 5432 | Database |
 | redis | 6379 | Cache |
 | selenium-chrome | 4444 | Browser automation |
-| ollama | 11434 | AI model server |
+| ollama | 11434 | AI model server (remote on ai-srv) |
 
 ## 📊 API Endpoints
 
@@ -271,6 +287,7 @@ Full API docs: http://localhost:8001/docs
 
 ### Local Development Setup
 
+**Backend:**
 ```bash
 # Create virtual environment
 python -m venv venv
@@ -283,8 +300,35 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with local settings
 
-# Run locally (requires services running via docker-compose)
+# Run backend locally (requires services running via docker-compose)
 uvicorn main:app --reload
+```
+
+**Frontend:**
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Run development server with hot reload
+npm run dev
+
+# Build for production
+npm run build
+```
+
+**Full Stack Development:**
+```bash
+# Terminal 1: Start backend
+uvicorn main:app --reload
+
+# Terminal 2: Start frontend dev server
+cd frontend && npm run dev
+
+# Frontend will proxy API requests to backend
+# Access at http://localhost:5173 (Vite default)
 ```
 
 ### Running Tests
@@ -300,12 +344,18 @@ pytest
 ### Project Structure Notes
 
 This project follows a modular structure:
-- **app/**: Main application package
+- **app/**: Main application package (Python/FastAPI backend)
   - **crawler/**: Platform-specific crawlers
   - **ai/**: AI analysis modules
   - **notifications/**: Notification services
   - **utils/**: Utility functions
-- **static/**: Frontend files
+  - **services/**: Service integrations (OpenWebUI, etc.)
+- **frontend/**: React TypeScript frontend (source code)
+  - **src/components/**: Reusable UI components
+  - **src/pages/**: Page components
+  - **src/services/**: API service layer
+  - **src/types/**: TypeScript type definitions
+- **static/**: Frontend build output (served by FastAPI)
 - **scripts/**: Utility scripts
 - **docs/**: Documentation
 

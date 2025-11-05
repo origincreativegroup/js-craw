@@ -6,6 +6,7 @@ import Jobs from './pages/Jobs';
 import Tasks from './pages/Tasks';
 import FollowUps from './pages/FollowUps';
 import Companies from './pages/Companies';
+import CompanyDiscovery from './pages/CompanyDiscovery';
 import Automation from './pages/Automation';
 import Settings from './pages/Settings';
 import Apply from './pages/Apply';
@@ -25,6 +26,7 @@ function App() {
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/follow-ups" element={<FollowUps />} />
           <Route path="/companies" element={<Companies />} />
+          <Route path="/company-discovery" element={<CompanyDiscovery />} />
           <Route path="/automation" element={<Automation />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/filter-profile" element={<FilterProfile />} />

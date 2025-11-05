@@ -78,6 +78,30 @@ export interface Company {
   priority_score?: number;
 }
 
+export interface PendingCompany {
+  id: number;
+  name: string;
+  career_page_url: string;
+  discovery_source: string;
+  confidence_score: number;
+  crawler_type: string;
+  crawler_config?: any;
+  metadata?: any;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiscoveryStatus {
+  total_companies: number;
+  active_companies: number;
+  target_companies: number;
+  pending_count: number;
+  discovery_enabled: boolean;
+  discovery_interval_hours: number;
+  auto_approve_threshold: number;
+  recent_pending: PendingCompany[];
+}
+
 export interface SearchCriteria {
   id: number;
   name: string;

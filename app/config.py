@@ -63,12 +63,20 @@ class Settings(BaseSettings):
     OPENWEBUI_USERNAME: Optional[str] = None  # Optional username for basic auth
     
     # Company lifecycle management settings
-    COMPANY_TARGET_COUNT: int = 1500  # Target number of companies to maintain
+    COMPANY_TARGET_COUNT: int = 4000  # Target number of companies to maintain
     COMPANY_DISCOVERY_BATCH_SIZE: int = 50  # Number of companies to discover per batch
     CONSECUTIVE_EMPTY_THRESHOLD: int = 3  # Remove companies after N consecutive empty crawls
     VIABILITY_SCORE_THRESHOLD: float = 30.0  # Minimum viability score to keep company (0-100)
     COMPANY_REFRESH_SCHEDULE: str = "daily"  # How often to refresh company list
     WEB_SEARCH_ENABLED: bool = True  # Enable AI web search for company discovery
+    
+    # Company discovery settings
+    COMPANY_DISCOVERY_ENABLED: bool = True  # Enable automated company discovery
+    COMPANY_DISCOVERY_INTERVAL_HOURS: int = 6  # How often to run discovery (in hours)
+    COMPANY_AUTO_APPROVE_THRESHOLD: float = 70.0  # Auto-approve companies with confidence >= this value
+    LINKEDIN_SEARCH_KEYWORDS: str = "careers jobs"  # Keywords for LinkedIn discovery
+    INDEED_SEARCH_KEYWORDS: str = "careers jobs"  # Keywords for Indeed discovery
+    WEB_SEARCH_KEYWORDS: str = "companies careers"  # Keywords for web search discovery
     
     # Task workspace settings
     AUTO_GENERATE_TASKS: bool = True  # Enable/disable automatic task generation from AI insights

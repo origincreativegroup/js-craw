@@ -14,6 +14,8 @@ import type {
   SearchRecipe,
   UserProfile,
   UserProfileUpdate,
+  PendingCompany,
+  DiscoveryStatus,
 } from '../types';
 
 const API_BASE = '/api';
@@ -137,6 +139,34 @@ export const createFollowUp = async (data: {
 // Companies
 export const getCompanies = async (activeOnly: boolean = false): Promise<Company[]> => {
   const response = await api.get('/companies', { params: { active_only: activeOnly } });
+  return response.data;
+};
+
+// Company Discovery
+export const getDiscoveryStatus = async (): Promise<DiscoveryStatus> => {
+  const response = await api.get('/companies/discovery/status');
+  return response.data;
+};
+
+export const runDiscovery = async (keywords?: string, maxCompanies?: number): Promise<any> => {
+  const response = await api.post('/companies/discover/run', null, {
+    params: { keywords, max_companies: maxCompanies },
+  });
+  return response.data;
+};
+
+export const getPendingCompanies = async (limit?: number): Promise<PendingCompany[]> => {
+  const response = await api.get('/companies/pending', { params: { limit } });
+  return response.data;
+};
+
+export const approvePendingCompany = async (pendingId: number): Promise<any> => {
+  const response = await api.post(`/companies/pending/${pendingId}/approve`);
+  return response.data;
+};
+
+export const rejectPendingCompany = async (pendingId: number): Promise<any> => {
+  const response = await api.post(`/companies/pending/${pendingId}/reject`);
   return response.data;
 };
 

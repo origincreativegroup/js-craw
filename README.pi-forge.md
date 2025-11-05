@@ -153,6 +153,13 @@ docker stats job-crawler-app
 - Changed to llama3.1 model (available on ai-srv)
 - Configured ntfy notifications with topic: pi-forge-job-alerts
 
+**Last Status Check**: November 5, 2025 06:15 CST
+- All containers running and healthy
+- React TypeScript frontend deployed and operational
+- Frontend built and served from static/ directory
+- Health endpoint responding correctly
+- Latest features: Company data pipeline, enhanced automation control, OpenWebUI integration
+
 ## Full Documentation
 
 See main README.md for complete documentation on features, API endpoints, and development.

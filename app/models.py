@@ -56,6 +56,24 @@ class Company(Base):
     crawl_fallbacks = relationship("CrawlFallback", back_populates="company")
 
 
+class PendingCompany(Base):
+    """Companies discovered but pending approval"""
+    __tablename__ = "pending_companies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, unique=True, index=True)
+    career_page_url = Column(Text, nullable=False)
+    discovery_source = Column(String(50), nullable=False)  # linkedin, indeed, web_search
+    confidence_score = Column(Float, nullable=False, index=True)  # AI confidence score 0-100
+    crawler_type = Column(String(50), nullable=False)  # greenhouse, lever, workday, generic
+    crawler_config = Column(JSON, nullable=True)
+    metadata = Column(JSON, nullable=True)  # Additional discovery metadata
+    status = Column(String(20), default="pending", index=True)  # pending, approved, rejected
+    reviewed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class SearchCriteria(Base):
     """Job search criteria"""
     __tablename__ = "search_criteria"

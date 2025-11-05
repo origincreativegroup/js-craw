@@ -113,6 +113,66 @@ async def lifespan(app: FastAPI):
         replace_existing=True
     )
     
+    # Company discovery scheduler
+    async def run_company_discovery():
+        """Automated company discovery task"""
+        if not settings.COMPANY_DISCOVERY_ENABLED:
+            logger.debug("Company discovery is disabled, skipping")
+            return
+        
+        try:
+            from app.crawler.company_discovery import CompanyDiscoveryService
+            from app.services.company_discovery_service import process_and_insert_discovered_companies
+            from app.database import AsyncSessionLocal
+            from app.models import Company
+            from app.utils.company_loader import count_companies
+            from sqlalchemy import select
+            
+            async with AsyncSessionLocal() as db:
+                # Check if we need more companies
+                current_count = await count_companies(db, active_only=True)
+                target_count = settings.COMPANY_TARGET_COUNT
+                
+                if current_count >= target_count:
+                    logger.info(f"Company count ({current_count}) meets target ({target_count}), skipping discovery")
+                    return
+                
+                # Get existing company names for deduplication
+                result = await db.execute(select(Company.name))
+                existing_names = {row[0].lower() for row in result.fetchall()}
+                
+                # Discover companies
+                discovery_service = CompanyDiscoveryService()
+                discovered = await discovery_service.discover_companies(
+                    max_companies=settings.COMPANY_DISCOVERY_BATCH_SIZE,
+                    existing_company_names=existing_names
+                )
+                
+                if not discovered:
+                    logger.info("No new companies discovered")
+                    return
+                
+                # Process and insert discovered companies
+                result = await process_and_insert_discovered_companies(discovered, db)
+                
+                logger.info(
+                    f"Company discovery completed: {result.get('auto_approved', 0)} auto-approved, "
+                    f"{result.get('pending_added', 0)} pending, {result.get('skipped_existing', 0)} skipped"
+                )
+        except Exception as e:
+            logger.error(f"Error in automated company discovery: {e}", exc_info=True)
+    
+    # Schedule company discovery
+    discovery_interval_hours = getattr(settings, "COMPANY_DISCOVERY_INTERVAL_HOURS", 6)
+    scheduler.add_job(
+        run_company_discovery,
+        trigger=IntervalTrigger(hours=discovery_interval_hours),
+        id="company_discovery",
+        name="Automated company discovery",
+        replace_existing=True
+    )
+    logger.info(f"Scheduled company discovery to run every {discovery_interval_hours} hours")
+    
     # Task reminder scheduler
     async def check_task_reminders():
         """Check for due tasks and send reminders"""
