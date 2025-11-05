@@ -19,9 +19,11 @@ import {
   getCrawlStatus, 
   triggerCrawl, 
   cancelCrawl,
-  getSearches 
+  getSearches,
+  getCompanies,
+  updateSchedulerInterval 
 } from '../services/api';
-import type { CrawlStatus, SearchCriteria } from '../types';
+import type { CrawlStatus, SearchCriteria, Company } from '../types';
 import { format } from 'date-fns';
 import './Automation.css';
 
@@ -29,8 +31,11 @@ const Automation = () => {
   const [crawlStatus, setCrawlStatus] = useState<CrawlStatus | null>(null);
   const [schedulerStatus, setSchedulerStatus] = useState<any>(null);
   const [searches, setSearches] = useState<SearchCriteria[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [intervalInput, setIntervalInput] = useState<string>('');
+  const [updatingInterval, setUpdatingInterval] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -40,12 +45,14 @@ const Automation = () => {
 
   const loadData = async () => {
     try {
-      const [crawlData, searchesData] = await Promise.all([
+      const [crawlData, searchesData, companiesData] = await Promise.all([
         getCrawlStatus(),
         getSearches(),
+        getCompanies(true), // Only active companies
       ]);
       setCrawlStatus(crawlData);
       setSearches(searchesData);
+      setCompanies(companiesData);
       
       // Try to get scheduler status (if endpoint exists)
       try {
@@ -53,6 +60,9 @@ const Automation = () => {
         if (response.ok) {
           const schedulerData = await response.json();
           setSchedulerStatus(schedulerData);
+          if (schedulerData.interval_minutes) {
+            setIntervalInput(schedulerData.interval_minutes.toString());
+          }
         }
       } catch (e) {
         // Scheduler endpoint might not exist
@@ -119,6 +129,41 @@ const Automation = () => {
     }
   };
 
+  const formatInterval = (minutes: number): string => {
+    if (minutes < 60) {
+      return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    } else if (minutes < 1440) {
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+      if (remainingMinutes === 0) {
+        return `${hours} hour${hours !== 1 ? 's' : ''}`;
+      }
+      return `${hours} hour${hours !== 1 ? 's' : ''} ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
+    } else {
+      return 'Once per day';
+    }
+  };
+
+  const handleUpdateInterval = async () => {
+    const minutes = parseInt(intervalInput, 10);
+    if (isNaN(minutes) || minutes < 30 || minutes > 1440) {
+      alert('Interval must be between 30 minutes and 1440 minutes (once per day)');
+      return;
+    }
+
+    setUpdatingInterval(true);
+    try {
+      await updateSchedulerInterval(minutes);
+      await loadData();
+      alert('Scheduler interval updated successfully!');
+    } catch (error: any) {
+      console.error('Error updating interval:', error);
+      alert(error?.response?.data?.detail || 'Failed to update interval. Please try again.');
+    } finally {
+      setUpdatingInterval(false);
+    }
+  };
+
   if (loading) {
     return <div className="loading">Loading automation settings...</div>;
   }
@@ -149,7 +194,13 @@ const Automation = () => {
               <Activity size={24} className="card-icon" />
               <div>
                 <h2 className="card-title">Crawl Status</h2>
-                <p className="card-subtitle">Crawling company career pages for new jobs</p>
+                <p className="card-subtitle">
+                  {crawlStatus?.run_type === 'all_companies' 
+                    ? 'Crawling all companies for new jobs' 
+                    : crawlStatus?.run_type === 'search'
+                    ? 'Crawling companies from search criteria'
+                    : 'Crawling company career pages for new jobs'}
+                </p>
               </div>
             </div>
             <div className={`status-indicator ${crawlStatus?.is_running ? 'running' : 'idle'}`}>
@@ -267,11 +318,51 @@ const Automation = () => {
                   )}
                   {schedulerStatus.interval_minutes && (
                     <div className="interval">
-                      <span>Interval: Every {schedulerStatus.interval_minutes} minutes</span>
+                      <span>Interval: Every {formatInterval(schedulerStatus.interval_minutes)}</span>
                     </div>
                   )}
                 </div>
-                <div className="scheduler-actions">
+                
+                <div className="interval-controls" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, marginBottom: '8px', color: 'var(--text-primary)' }}>
+                      Set Crawl Interval
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <input
+                        type="number"
+                        min="30"
+                        max="1440"
+                        value={intervalInput}
+                        onChange={(e) => setIntervalInput(e.target.value)}
+                        placeholder={schedulerStatus?.interval_minutes?.toString() || '30'}
+                        style={{
+                          padding: '8px 12px',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          width: '120px',
+                          backgroundColor: 'var(--bg-primary)',
+                          color: 'var(--text-primary)'
+                        }}
+                      />
+                      <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>minutes</span>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={handleUpdateInterval}
+                        loading={updatingInterval}
+                      >
+                        Update
+                      </Button>
+                    </div>
+                    <small style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                      Range: 30 minutes - 1440 minutes (once per day)
+                    </small>
+                  </div>
+                </div>
+
+                <div className="scheduler-actions" style={{ marginTop: '16px' }}>
                   {schedulerStatus.is_paused ? (
                     <Button
                       variant="success"
@@ -322,7 +413,7 @@ const Automation = () => {
               <div className="stat-label">Active Searches</div>
             </div>
             <div className="stat-item">
-              <div className="stat-value">{crawlStatus?.active_companies || 0}</div>
+              <div className="stat-value">{companies.length}</div>
               <div className="stat-label">Active Companies</div>
             </div>
             <div className="stat-item">
@@ -334,6 +425,34 @@ const Automation = () => {
               <div className="stat-label">Running Crawls</div>
             </div>
           </div>
+          
+          {companies.length > 0 && (
+            <div className="companies-list" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px', color: 'var(--text-primary)' }}>
+                Active Companies ({companies.length})
+              </h3>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                {companies.map((company) => (
+                  <div 
+                    key={company.id} 
+                    style={{
+                      padding: '6px 12px',
+                      backgroundColor: 'var(--bg-secondary)',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      border: '1px solid var(--border-color)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Building2 size={14} />
+                    <span>{company.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Crawler Health */}

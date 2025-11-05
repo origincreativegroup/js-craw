@@ -160,6 +160,10 @@ export const cancelCrawl = async (): Promise<void> => {
   await api.post('/crawl/cancel');
 };
 
+export const updateSchedulerInterval = async (intervalMinutes: number): Promise<void> => {
+  await api.patch('/automation/scheduler', { interval_minutes: intervalMinutes });
+};
+
 // Searches
 export const getSearches = async (): Promise<SearchCriteria[]> => {
   const response = await api.get('/searches');

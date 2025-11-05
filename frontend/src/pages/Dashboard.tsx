@@ -56,7 +56,13 @@ const Dashboard = () => {
           ) : (
             <span className="status-indicator idle"></span>
           )}
-          {crawlStatus?.is_running ? 'Crawling Companies & Jobs...' : 'Idle'}
+          {crawlStatus?.is_running 
+            ? (crawlStatus?.run_type === 'all_companies' 
+                ? 'Crawling All Companies...' 
+                : crawlStatus?.run_type === 'search'
+                ? 'Crawling Search-Based Jobs...'
+                : 'Crawling Companies & Jobs...')
+            : 'Idle'}
         </div>
       </div>
 
@@ -145,7 +151,11 @@ const Dashboard = () => {
           <div className="card-header">
             <h2 className="card-title">Crawl Status</h2>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Automatically crawling company career pages for new jobs
+              {crawlStatus?.run_type === 'all_companies' 
+                ? 'Automatically crawling all companies for new jobs' 
+                : crawlStatus?.run_type === 'search'
+                ? 'Crawling companies from active search criteria'
+                : 'Automatically crawling company career pages for new jobs'}
             </p>
           </div>
           <div className="crawl-info">
@@ -167,6 +177,11 @@ const Dashboard = () => {
                 {crawlStatus.current_company && (
                   <div className="current-company">
                     Currently crawling jobs from: <strong>{crawlStatus.current_company}</strong>
+                  </div>
+                )}
+                {crawlStatus.run_type && (
+                  <div className="crawl-type" style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                    Type: {crawlStatus.run_type === 'all_companies' ? 'Universal Company Crawl' : 'Search-Based Crawl'}
                   </div>
                 )}
                 {crawlStatus.eta_seconds && (
