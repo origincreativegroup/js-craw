@@ -259,6 +259,62 @@ export interface UserProfile {
   updated_at: string | null;
 }
 
+export interface UserDocument {
+  id: number;
+  filename: string;
+  file_type: string;
+  content: string;
+  metadata?: Record<string, any> | null;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+export interface JobFitAnalysis {
+  summary: string;
+  company_focus?: string | null;
+  key_requirements: string[];
+  skill_alignment: {
+    overall_fit: string;
+    matched_skills: string[];
+    missing_skills: string[];
+    upskill_suggestions: string[];
+  };
+  tailoring_tips: string[];
+  interview_prep: string[];
+}
+
+export interface JobFitResponse {
+  analysis: JobFitAnalysis;
+  documents_used: number[];
+}
+
+export interface TailoredDocumentsResponse {
+  documents: Record<string, string | null | undefined>;
+  used_documents: number[];
+}
+
+export interface JobFitPayload {
+  job_title?: string;
+  company?: string;
+  job_description: string;
+  requirements?: string;
+  user_summary?: string;
+  user_skills?: string[];
+  user_experience?: string;
+  supporting_document_ids?: number[];
+}
+
+export interface TailoredDocumentsPayload {
+  job_title: string;
+  company: string;
+  job_description: string;
+  requirements?: string;
+  user_summary?: string;
+  user_skills?: string[];
+  document_ids?: number[];
+  document_types?: string[];
+}
+
 export interface UserProfileUpdate {
   base_resume?: string;
   skills?: string[];

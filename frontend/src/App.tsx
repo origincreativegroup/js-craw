@@ -11,6 +11,7 @@ import Automation from './pages/Automation';
 import Settings from './pages/Settings';
 import Apply from './pages/Apply';
 import FilterProfile from './pages/FilterProfile';
+import CareerCopilot from './pages/CareerCopilot';
 import './App.css';
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
           <Route path="/discovery" element={<Discovery />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/apply" element={<Apply />} />
+          <Route path="/copilot" element={<CareerCopilot />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/follow-ups" element={<FollowUps />} />
           <Route path="/companies" element={<Companies />} />

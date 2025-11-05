@@ -17,6 +17,11 @@ import type {
   PendingCompany,
   DiscoveryStatus,
   AnalyzeJobResponse,
+  UserDocument,
+  JobFitResponse,
+  JobFitPayload,
+  TailoredDocumentsPayload,
+  TailoredDocumentsResponse,
 } from '../types';
 
 const API_BASE = '/api';
@@ -209,6 +214,49 @@ export const sendChatMessage = async (message: string, jobId?: number, context?:
     context,
   });
   return response.data;
+};
+
+export const uploadUserDocuments = async (files: FileList | File[]): Promise<UserDocument[]> => {
+  const formData = new FormData();
+  const list: File[] = Array.isArray(files) ? files : Array.from(files as FileList);
+  list.forEach((file) => formData.append('files', file));
+
+  const response = await api.post('/user-documents/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
+  return response.data.documents as UserDocument[];
+};
+
+export const fetchUserDocuments = async (): Promise<UserDocument[]> => {
+  const response = await api.get('/user-documents');
+  return response.data as UserDocument[];
+};
+
+export const updateUserDocumentContent = async (
+  id: number,
+  data: { content?: string; metadata?: Record<string, any> }
+): Promise<UserDocument> => {
+  const response = await api.patch(`/user-documents/${id}`, data);
+  return response.data as UserDocument;
+};
+
+export const deleteUserDocument = async (id: number): Promise<void> => {
+  await api.delete(`/user-documents/${id}`);
+};
+
+export const analyzeJobFit = async (payload: JobFitPayload): Promise<JobFitResponse> => {
+  const response = await api.post('/ai/job-fit', payload);
+  return response.data as JobFitResponse;
+};
+
+export const generateTailoredDocuments = async (
+  payload: TailoredDocumentsPayload
+): Promise<TailoredDocumentsResponse> => {
+  const response = await api.post('/ai/tailored-documents', payload);
+  return response.data as TailoredDocumentsResponse;
 };
 
 // OpenWebUI
