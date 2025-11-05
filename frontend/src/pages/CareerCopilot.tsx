@@ -7,7 +7,7 @@ import {
   Wand2,
   ClipboardList,
   FileText,
-  NotebookPen,
+  PenTool,
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -50,7 +50,7 @@ const CareerCopilot = () => {
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
   const [selectedDocumentContent, setSelectedDocumentContent] = useState('');
   const [savingDocument, setSavingDocument] = useState(false);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [_profile, setProfile] = useState<UserProfile | null>(null);
 
   const [jobTitle, setJobTitle] = useState('');
   const [jobCompany, setJobCompany] = useState('');
@@ -325,7 +325,7 @@ const CareerCopilot = () => {
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-              <NotebookPen size={32} color="#6366f1" />
+              <PenTool size={32} color="#6366f1" />
               <p>Select a document to review or edit.</p>
             </div>
           )}
