@@ -240,6 +240,86 @@ async def run_migration():
             await conn.execute(text("CREATE INDEX ix_companies_priority_score ON companies(priority_score)"))
             print("  ✓ priority_score column added")
     
+        # Check if app_settings table exists
+        result = await conn.execute(
+            text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'app_settings'
+                )
+            """)
+        )
+        app_settings_exists = result.scalar()
+        
+        if not app_settings_exists:
+            print("  Creating app_settings table...")
+            await conn.execute(text("""
+                CREATE TABLE app_settings (
+                    key VARCHAR(255) PRIMARY KEY,
+                    value JSONB NOT NULL,
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            await conn.execute(text("CREATE INDEX ix_app_settings_key ON app_settings(key)"))
+            print("  ✓ app_settings table created")
+        else:
+            print("  ✓ app_settings table already exists")
+        
+        # Check if applications table exists
+        result = await conn.execute(
+            text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'applications'
+                )
+            """)
+        )
+        applications_exists = result.scalar()
+        
+        if not applications_exists:
+            print("  Creating applications table...")
+            await conn.execute(text("""
+                CREATE TABLE applications (
+                    id SERIAL PRIMARY KEY,
+                    job_id INTEGER NOT NULL REFERENCES jobs(id),
+                    status VARCHAR(50) NOT NULL DEFAULT 'queued',
+                    application_date TIMESTAMP,
+                    portal_url TEXT,
+                    confirmation_number VARCHAR(255),
+                    resume_version_id INTEGER REFERENCES generated_documents(id),
+                    cover_letter_id INTEGER REFERENCES generated_documents(id),
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            await conn.execute(text("CREATE INDEX ix_applications_job_id ON applications(job_id)"))
+            await conn.execute(text("CREATE INDEX ix_applications_status ON applications(status)"))
+            await conn.execute(text("CREATE INDEX ix_applications_application_date ON applications(application_date)"))
+            await conn.execute(text("CREATE INDEX ix_applications_created_at ON applications(created_at)"))
+            print("  ✓ applications table created")
+        else:
+            print("  ⊘ applications table already exists")
+        
+        # Check if notify_enabled column exists in tasks table
+        result = await conn.execute(
+            text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'tasks' 
+                AND column_name = 'notify_enabled'
+            """)
+        )
+        notify_enabled_exists = result.scalar() is not None
+        
+        if not notify_enabled_exists:
+            print("  Adding notify_enabled column to tasks table...")
+            await conn.execute(text("ALTER TABLE tasks ADD COLUMN notify_enabled BOOLEAN DEFAULT TRUE"))
+            await conn.execute(text("CREATE INDEX ix_tasks_notify_enabled ON tasks(notify_enabled)"))
+            print("  ✓ notify_enabled column added to tasks table")
+        else:
+            print("  ⊘ notify_enabled column already exists in tasks table")
+    
     print("\n✅ Database migration complete!")
 
 

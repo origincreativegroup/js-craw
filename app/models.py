@@ -19,6 +19,15 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class AppSettings(Base):
+    """Application settings stored in database"""
+    __tablename__ = "app_settings"
+    
+    key = Column(String(255), primary_key=True, index=True)
+    value = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Company(Base):
     """Company with career page"""
     __tablename__ = "companies"
@@ -115,6 +124,7 @@ class Job(Base):
     follow_ups = relationship("FollowUp", back_populates="job")
     generated_documents = relationship("GeneratedDocument", back_populates="job")
     tasks = relationship("Task", back_populates="job")
+    applications = relationship("Application", back_populates="job")
 
 
 class FollowUp(Base):
@@ -231,4 +241,34 @@ class Task(Base):
     
     # Relationships
     job = relationship("Job", back_populates="tasks")
+    
+    # Notifications
+    notify_enabled = Column(Boolean, default=True, index=True)  # Enable/disable task notifications
 
+
+class Application(Base):
+    """Application tracking for jobs - full lifecycle beyond simple job status"""
+    __tablename__ = "applications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    
+    # Application status tracking
+    status = Column(String(50), nullable=False, default="queued", index=True)  # queued, drafting, submitted, interviewing, rejected, accepted
+    application_date = Column(DateTime, nullable=True, index=True)  # When application was actually submitted
+    
+    # Application details
+    portal_url = Column(Text, nullable=True)  # Link to application portal
+    confirmation_number = Column(String(255), nullable=True)  # Application confirmation/tracking number
+    resume_version_id = Column(Integer, ForeignKey("generated_documents.id"), nullable=True)  # Link to resume version used
+    cover_letter_id = Column(Integer, ForeignKey("generated_documents.id"), nullable=True)  # Link to cover letter used
+    notes = Column(Text, nullable=True)  # Additional notes about the application
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    job = relationship("Job", back_populates="applications")
+    resume_document = relationship("GeneratedDocument", foreign_keys=[resume_version_id], post_update=True)
+    cover_letter_document = relationship("GeneratedDocument", foreign_keys=[cover_letter_id], post_update=True)

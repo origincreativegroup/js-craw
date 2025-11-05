@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.models import Job, SearchCriteria, User, FollowUp, CrawlLog, Company, Task
+from app.models import Job, SearchCriteria, User, FollowUp, CrawlLog, Company, Task, Application, GeneratedDocument
 from app.utils.crypto import encrypt_password
 from app.crawler.orchestrator import CrawlerOrchestrator
 from app.tasks.task_service import TaskService
@@ -107,6 +107,40 @@ class TaskSnooze(BaseModel):
 class BulkTaskAction(BaseModel):
     task_ids: List[int]
     action: str  # complete, cancel, snooze
+
+
+class ApplicationCreate(BaseModel):
+    job_id: int
+    status: Optional[str] = "queued"  # queued, drafting, submitted, interviewing, rejected, accepted
+    application_date: Optional[datetime] = None
+    portal_url: Optional[str] = None
+    confirmation_number: Optional[str] = None
+    resume_version_id: Optional[int] = None
+    cover_letter_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class ApplicationUpdate(BaseModel):
+    status: Optional[str] = None
+    application_date: Optional[datetime] = None
+    portal_url: Optional[str] = None
+    confirmation_number: Optional[str] = None
+    resume_version_id: Optional[int] = None
+    cover_letter_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class JobAction(BaseModel):
+    action: str  # queue_application, mark_priority, mark_favorite
+    metadata: Optional[dict] = None
+
+
+class DocumentGenerate(BaseModel):
+    document_types: List[str] = ["resume", "cover_letter"]  # Can generate one or both
+
+
+class DocumentUpdate(BaseModel):
+    content: str
 
 
 # Search Criteria endpoints
@@ -411,8 +445,8 @@ async def create_company(
 
 @router.post("/companies/load-from-csv")
 async def load_companies_from_csv_endpoint(
-    force: bool = False,
-    min_companies: int = 10
+    force: bool = Query(False, description="Force reload even if sufficient companies exist"),
+    min_companies: int = Query(10, description="Minimum companies required before loading")
 ):
     """
     Load companies from companies.csv file.
@@ -422,20 +456,22 @@ async def load_companies_from_csv_endpoint(
         min_companies: Minimum number of companies required before loading (ignored if force=True)
     
     Returns:
-        Result of the load operation
+        Result of the load operation with detailed statistics
     """
     try:
         from app.utils.company_loader import load_companies_from_csv
         
-        # If force is True, set min_companies to a very high number to always load
         result = await load_companies_from_csv(
-            min_companies=999999 if force else min_companies
+            min_companies=min_companies,
+            force=force
         )
         
         if not result.get("success"):
+            error_detail = result.get("error") or result.get("reason", "unknown error")
             raise HTTPException(
                 status_code=400,
-                detail=f"Failed to load companies: {result.get('reason', 'unknown error')}"
+                detail=f"Failed to load companies: {error_detail}",
+                headers={"X-Error-Details": str(result)}
             )
         
         return {
@@ -447,6 +483,138 @@ async def load_companies_from_csv_endpoint(
     except Exception as e:
         logger.error(f"Error loading companies from CSV: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error loading companies: {str(e)}")
+
+
+@router.get("/companies/diagnose")
+async def diagnose_companies(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Diagnostic endpoint to check company loading status and identify issues.
+    
+    Returns:
+        Detailed diagnostic information about companies, CSV file, and loading status
+    """
+    try:
+        from app.utils.company_loader import count_companies, parse_companies_csv
+        from pathlib import Path
+        
+        # Get company counts
+        total_count = await count_companies(db, active_only=False)
+        active_count = await count_companies(db, active_only=True)
+        
+        # Check CSV file
+        project_root = Path(__file__).parent.parent.parent
+        csv_path = project_root / "companies.csv"
+        csv_exists = csv_path.exists()
+        
+        csv_stats = {
+            "exists": csv_exists,
+            "path": str(csv_path),
+            "readable": False,
+            "parseable": False,
+            "companies_found": 0,
+            "parsing_errors": {}
+        }
+        
+        if csv_exists:
+            try:
+                # Test if file is readable
+                with open(csv_path, 'r', encoding='utf-8') as f:
+                    csv_stats["readable"] = True
+                
+                # Try to parse it
+                companies_data, parsing_stats = parse_companies_csv(csv_path)
+                csv_stats["parseable"] = True
+                csv_stats["companies_found"] = len(companies_data)
+                csv_stats["parsing_errors"] = {
+                    "no_url": len(parsing_stats.get("no_url", [])),
+                    "invalid_url": len(parsing_stats.get("invalid_url", [])),
+                    "empty_name": len(parsing_stats.get("empty_name", [])),
+                    "parsing_error": len(parsing_stats.get("parsing_error", []))
+                }
+                # Include sample errors if any
+                if parsing_stats.get("no_url"):
+                    csv_stats["sample_no_url"] = parsing_stats["no_url"][:5]
+            except Exception as e:
+                csv_stats["parse_error"] = str(e)
+                logger.error(f"Error parsing CSV during diagnosis: {e}")
+        
+        # Check database connection
+        db_status = "connected"
+        try:
+            await db.execute(select(func.count(Company.id)))
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+        
+        # Get recent companies
+        recent_companies_result = await db.execute(
+            select(Company)
+            .order_by(desc(Company.created_at))
+            .limit(5)
+        )
+        recent_companies = recent_companies_result.scalars().all()
+        
+        diagnosis = {
+            "database": {
+                "status": db_status,
+                "total_companies": total_count,
+                "active_companies": active_count,
+                "inactive_companies": total_count - active_count
+            },
+            "csv_file": csv_stats,
+            "recent_companies": [
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "crawler_type": c.crawler_type,
+                    "is_active": c.is_active,
+                    "created_at": c.created_at.isoformat() if c.created_at else None
+                }
+                for c in recent_companies
+            ],
+            "recommendations": []
+        }
+        
+        # Generate recommendations
+        if active_count == 0:
+            diagnosis["recommendations"].append({
+                "severity": "critical",
+                "message": "No active companies found. Load companies from CSV using /api/companies/load-from-csv",
+                "action": "POST /api/companies/load-from-csv?force=true"
+            })
+        elif active_count < 10:
+            diagnosis["recommendations"].append({
+                "severity": "warning",
+                "message": f"Only {active_count} active companies. Consider loading more from CSV.",
+                "action": "POST /api/companies/load-from-csv?force=true"
+            })
+        
+        if not csv_exists:
+            diagnosis["recommendations"].append({
+                "severity": "error",
+                "message": f"CSV file not found at {csv_path}",
+                "action": "Ensure companies.csv exists in the project root"
+            })
+        elif csv_stats.get("companies_found", 0) == 0:
+            diagnosis["recommendations"].append({
+                "severity": "warning",
+                "message": "CSV file exists but no companies were parsed. Check CSV format.",
+                "action": "Review CSV parsing errors in csv_file.parsing_errors"
+            })
+        
+        if csv_stats.get("parsing_errors", {}).get("no_url", 0) > 0:
+            diagnosis["recommendations"].append({
+                "severity": "info",
+                "message": f"{csv_stats['parsing_errors']['no_url']} companies in CSV have no extractable URLs",
+                "action": "Review sample_no_url entries to fix CSV data"
+            })
+        
+        return diagnosis
+        
+    except Exception as e:
+        logger.error(f"Error in company diagnosis: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error running diagnosis: {str(e)}")
 
 
 @router.patch("/companies/{company_id}")
@@ -636,11 +804,20 @@ async def get_jobs(
     status: Optional[str] = None,
     search_id: Optional[int] = None,
     new_only: bool = False,
+    match: Optional[str] = Query(None, description="Filter by match score: 'high' (>=75), 'medium' (50-74), 'low' (<50)"),
+    ready_to_apply: Optional[bool] = Query(None, description="Filter jobs ready to apply (match_score >= 70)"),
+    sort: Optional[str] = Query("discovered_at", description="Sort field: 'discovered_at', 'ai_match_score', 'posted_date'"),
     limit: int = 100,
     db: AsyncSession = Depends(get_db)
 ):
     """Get jobs with filters"""
-    query = select(Job).order_by(desc(Job.discovered_at))
+    # Determine sort order
+    if sort == "ai_match_score":
+        query = select(Job).order_by(desc(Job.ai_match_score))
+    elif sort == "posted_date":
+        query = select(Job).order_by(desc(Job.posted_date))
+    else:  # default to discovered_at
+        query = select(Job).order_by(desc(Job.discovered_at))
     
     if status:
         query = query.where(Job.status == status)
@@ -648,6 +825,17 @@ async def get_jobs(
         query = query.where(Job.search_criteria_id == search_id)
     if new_only:
         query = query.where(Job.is_new == True)
+    if match == "high":
+        query = query.where(Job.ai_match_score >= 75)
+    elif match == "medium":
+        query = query.where(Job.ai_match_score >= 50, Job.ai_match_score < 75)
+    elif match == "low":
+        query = query.where(Job.ai_match_score < 50)
+    if ready_to_apply is not None:
+        if ready_to_apply:
+            query = query.where(Job.ai_match_score >= 70)
+        else:
+            query = query.where((Job.ai_match_score < 70) | (Job.ai_match_score.is_(None)))
     
     query = query.limit(limit)
     
@@ -972,29 +1160,71 @@ async def trigger_crawl(
     try:
         orchestrator = request.app.state.crawler
         
+        # Check if companies exist before crawling
+        active_companies_result = await db.execute(
+            select(func.count(Company.id)).where(Company.is_active == True)
+        )
+        active_companies_count = active_companies_result.scalar() or 0
+        
+        if active_companies_count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No active companies found. Please load companies first using POST /api/companies/load-from-csv"
+            )
+        
         # Default to "searches" if not specified
         if crawl_type is None or crawl_type == "searches":
+            # Check if there are active searches
+            searches_result = await db.execute(
+                select(func.count(SearchCriteria.id)).where(SearchCriteria.is_active == True)
+            )
+            active_searches_count = searches_result.scalar() or 0
+            
+            if active_searches_count == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No active searches found. Create a search first using POST /api/searches, or use crawl_type='all' to crawl all companies."
+                )
+            
             # Search-based crawling: run all active searches
-            results = await orchestrator.run_all_searches()
-            return {
-                "message": "Search-based crawl completed",
-                "new_jobs": len(results),
-                "crawl_type": "searches"
-            }
+            try:
+                results = await orchestrator.run_all_searches()
+                return {
+                    "message": "Search-based crawl completed",
+                    "new_jobs": len(results),
+                    "crawl_type": "searches",
+                    "companies_crawled": active_companies_count,
+                    "searches_run": active_searches_count
+                }
+            except Exception as e:
+                logger.error(f"Error during search-based crawl: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Crawl failed: {str(e)}. Check logs for details."
+                )
         elif crawl_type == "all":
             # Base crawling: crawl all companies and use AI to filter
-            results = await orchestrator.crawl_all_companies()
-            return {
-                "message": "Universal crawl completed (all companies crawled, AI-filtered)",
-                "new_jobs": len(results),
-                "crawl_type": "universal"
-            }
+            try:
+                results = await orchestrator.crawl_all_companies()
+                return {
+                    "message": "Universal crawl completed (all companies crawled, AI-filtered)",
+                    "new_jobs": len(results),
+                    "crawl_type": "universal",
+                    "companies_crawled": active_companies_count
+                }
+            except Exception as e:
+                logger.error(f"Error during universal crawl: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Crawl failed: {str(e)}. Check logs for details."
+                )
         else:
             raise HTTPException(status_code=400, detail=f"Invalid crawl_type: {crawl_type}. Use 'searches' or 'all'")
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Unexpected error in crawl trigger: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
 @router.post("/crawl/cancel")
@@ -1349,8 +1579,12 @@ async def get_crawl_logs(
 async def get_openwebui_info(
     request: Request
 ):
-    """Get OpenWebUI access information"""
+    """Get OpenWebUI access information with health status"""
     from app.config import settings
+    from app.services.openwebui_service import get_openwebui_service
+    
+    service = get_openwebui_service()
+    health_status = await service.check_health()
     
     return {
         "enabled": settings.OPENWEBUI_ENABLED,
@@ -1364,8 +1598,128 @@ async def get_openwebui_info(
             "Ask questions about companies",
             "Generate cover letters and resumes",
             "Analyze job descriptions"
-        ]
+        ],
+        "health_status": health_status.get("status"),
+        "last_checked": health_status.get("last_checked"),
+        "capabilities": health_status.get("capabilities", []),
+        "auth_status": health_status.get("auth_status")
     }
+
+
+@router.get("/openwebui/health")
+async def get_openwebui_health(
+    request: Request
+):
+    """Get detailed OpenWebUI health check"""
+    from app.services.openwebui_service import get_openwebui_service
+    
+    service = get_openwebui_service()
+    return await service.check_health()
+
+
+class OpenWebUIAuthRequest(BaseModel):
+    api_key: Optional[str] = None
+    auth_token: Optional[str] = None
+
+
+@router.post("/openwebui/verify-auth")
+async def verify_openwebui_auth(
+    auth_request: OpenWebUIAuthRequest,
+    request: Request
+):
+    """Verify OpenWebUI authentication"""
+    from app.services.openwebui_service import get_openwebui_service
+    
+    service = get_openwebui_service()
+    return await service.verify_auth(auth_request.api_key, auth_request.auth_token)
+
+
+@router.get("/openwebui/status")
+async def get_openwebui_status(
+    request: Request
+):
+    """Get combined health and auth status"""
+    from app.services.openwebui_service import get_openwebui_service
+    from app.config import settings
+    
+    service = get_openwebui_service()
+    health = await service.check_health()
+    
+    # Try to get auth tokens from settings if available
+    api_key = getattr(settings, 'OPENWEBUI_API_KEY', None)
+    auth_token = getattr(settings, 'OPENWEBUI_AUTH_TOKEN', None)
+    
+    auth_status = None
+    if api_key or auth_token:
+        auth_result = await service.verify_auth(api_key, auth_token)
+        auth_status = auth_result
+    
+    return {
+        "health": health,
+        "auth": auth_status,
+        "enabled": settings.OPENWEBUI_ENABLED,
+        "url": settings.OPENWEBUI_URL
+    }
+
+
+class OpenWebUIContextRequest(BaseModel):
+    job_id: int
+    prompt_type: Optional[str] = "analyze"  # analyze, follow_up, interview_prep, cover_letter
+
+
+@router.post("/openwebui/send-context")
+async def send_context_to_openwebui(
+    context_request: OpenWebUIContextRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Send job context to OpenWebUI to create a new chat"""
+    from app.services.openwebui_service import get_openwebui_service
+    from app.config import settings
+    
+    try:
+        # Get job details
+        result = await db.execute(select(Job).where(Job.id == context_request.job_id))
+        job = result.scalar_one_or_none()
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        # Format job context
+        job_context = {
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "location": job.location,
+            "description": job.description,
+            "ai_match_score": job.ai_match_score,
+            "ai_summary": job.ai_summary,
+            "ai_pros": job.ai_pros,
+            "ai_cons": job.ai_cons,
+            "url": job.url,
+            "status": job.status
+        }
+        
+        context = {
+            "job": job_context,
+            "prompt_type": context_request.prompt_type
+        }
+        
+        # Get auth tokens from settings
+        api_key = getattr(settings, 'OPENWEBUI_API_KEY', None)
+        auth_token = getattr(settings, 'OPENWEBUI_AUTH_TOKEN', None)
+        
+        # Send to OpenWebUI
+        service = get_openwebui_service()
+        result = await service.send_context(context, api_key, auth_token)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending context to OpenWebUI: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error sending context: {str(e)}")
 
 
 # Telegram webhook endpoint
@@ -1701,6 +2055,521 @@ async def bulk_task_action(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/tasks/{task_id}/notify")
+async def toggle_task_notification(
+    task_id: int,
+    enabled: bool = Query(True, description="Enable or disable notifications"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Enable/disable notifications for a task"""
+    try:
+        result = await db.execute(select(Task).where(Task.id == task_id))
+        task = result.scalar_one_or_none()
+        
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        task.notify_enabled = enabled
+        await db.commit()
+        
+        return {"message": f"Notifications {'enabled' if enabled else 'disabled'}", "task_id": task.id, "notify_enabled": enabled}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error toggling task notification: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Application endpoints
+@router.post("/jobs/{job_id}/applications")
+async def create_application(
+    job_id: int,
+    application: ApplicationCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new application record for a job"""
+    try:
+        # Verify job exists
+        result = await db.execute(select(Job).where(Job.id == job_id))
+        job = result.scalar_one_or_none()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        # Verify document IDs if provided
+        if application.resume_version_id:
+            result = await db.execute(select(GeneratedDocument).where(GeneratedDocument.id == application.resume_version_id))
+            if not result.scalar_one_or_none():
+                raise HTTPException(status_code=404, detail="Resume document not found")
+        
+        if application.cover_letter_id:
+            result = await db.execute(select(GeneratedDocument).where(GeneratedDocument.id == application.cover_letter_id))
+            if not result.scalar_one_or_none():
+                raise HTTPException(status_code=404, detail="Cover letter document not found")
+        
+        new_application = Application(
+            job_id=job_id,
+            status=application.status,
+            application_date=application.application_date,
+            portal_url=application.portal_url,
+            confirmation_number=application.confirmation_number,
+            resume_version_id=application.resume_version_id,
+            cover_letter_id=application.cover_letter_id,
+            notes=application.notes
+        )
+        
+        db.add(new_application)
+        await db.commit()
+        await db.refresh(new_application)
+        
+        return {
+            "id": new_application.id,
+            "message": "Application created",
+            "application": {
+                "id": new_application.id,
+                "job_id": new_application.job_id,
+                "status": new_application.status,
+                "application_date": new_application.application_date.isoformat() if new_application.application_date else None,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error creating application: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/applications")
+async def get_applications(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    job_id: Optional[int] = Query(None, description="Filter by job ID"),
+    limit: int = Query(100, description="Maximum number of applications to return"),
+    db: AsyncSession = Depends(get_db)
+):
+    """List applications with optional filters"""
+    try:
+        query = select(Application).order_by(desc(Application.created_at))
+        
+        if status:
+            query = query.where(Application.status == status)
+        if job_id:
+            query = query.where(Application.job_id == job_id)
+        
+        query = query.limit(limit)
+        
+        result = await db.execute(query)
+        applications = result.scalars().all()
+        
+        return [
+            {
+                "id": app.id,
+                "job_id": app.job_id,
+                "status": app.status,
+                "application_date": app.application_date.isoformat() if app.application_date else None,
+                "portal_url": app.portal_url,
+                "confirmation_number": app.confirmation_number,
+                "resume_version_id": app.resume_version_id,
+                "cover_letter_id": app.cover_letter_id,
+                "notes": app.notes,
+                "created_at": app.created_at.isoformat(),
+                "updated_at": app.updated_at.isoformat(),
+                "job": {
+                    "id": app.job.id,
+                    "title": app.job.title,
+                    "company": app.job.company,
+                    "location": app.job.location,
+                } if app.job else None
+            }
+            for app in applications
+        ]
+    except Exception as e:
+        logger.error(f"Error listing applications: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/applications/{application_id}")
+async def get_application(
+    application_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get application details"""
+    try:
+        result = await db.execute(select(Application).where(Application.id == application_id))
+        app = result.scalar_one_or_none()
+        
+        if not app:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        return {
+            "id": app.id,
+            "job_id": app.job_id,
+            "status": app.status,
+            "application_date": app.application_date.isoformat() if app.application_date else None,
+            "portal_url": app.portal_url,
+            "confirmation_number": app.confirmation_number,
+            "resume_version_id": app.resume_version_id,
+            "cover_letter_id": app.cover_letter_id,
+            "notes": app.notes,
+            "created_at": app.created_at.isoformat(),
+            "updated_at": app.updated_at.isoformat(),
+            "job": {
+                "id": app.job.id,
+                "title": app.job.title,
+                "company": app.job.company,
+                "location": app.job.location,
+                "url": app.job.url,
+                "ai_match_score": app.job.ai_match_score,
+            } if app.job else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading application: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/applications/{application_id}")
+async def update_application(
+    application_id: int,
+    update: ApplicationUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update application status/notes"""
+    try:
+        result = await db.execute(select(Application).where(Application.id == application_id))
+        app = result.scalar_one_or_none()
+        
+        if not app:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        # Verify document IDs if provided
+        if update.resume_version_id:
+            result = await db.execute(select(GeneratedDocument).where(GeneratedDocument.id == update.resume_version_id))
+            if not result.scalar_one_or_none():
+                raise HTTPException(status_code=404, detail="Resume document not found")
+        
+        if update.cover_letter_id:
+            result = await db.execute(select(GeneratedDocument).where(GeneratedDocument.id == update.cover_letter_id))
+            if not result.scalar_one_or_none():
+                raise HTTPException(status_code=404, detail="Cover letter document not found")
+        
+        # Update fields
+        for field, value in update.dict(exclude_unset=True).items():
+            setattr(app, field, value)
+        
+        await db.commit()
+        return {"message": "Application updated", "application_id": app.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating application: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/applications/{application_id}")
+async def delete_application(
+    application_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete an application"""
+    try:
+        result = await db.execute(select(Application).where(Application.id == application_id))
+        app = result.scalar_one_or_none()
+        
+        if not app:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        await db.delete(app)
+        await db.commit()
+        
+        return {"message": "Application deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error deleting application: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/jobs/{job_id}/actions")
+async def handle_job_action(
+    job_id: int,
+    action: JobAction,
+    db: AsyncSession = Depends(get_db)
+):
+    """Handle job action intents (queue for application, mark priority, etc.)"""
+    try:
+        result = await db.execute(select(Job).where(Job.id == job_id))
+        job = result.scalar_one_or_none()
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        if action.action == "queue_application":
+            # Check if application already exists
+            result = await db.execute(select(Application).where(Application.job_id == job_id))
+            existing_app = result.scalar_one_or_none()
+            
+            if existing_app:
+                return {"message": "Application already exists", "application_id": existing_app.id}
+            
+            # Create new application with queued status
+            new_application = Application(
+                job_id=job_id,
+                status="queued"
+            )
+            db.add(new_application)
+            await db.commit()
+            await db.refresh(new_application)
+            
+            return {"message": "Job queued for application", "application_id": new_application.id}
+        
+        elif action.action == "mark_priority":
+            # Update job status or create a task
+            job.status = "saved"  # Mark as saved/priority
+            await db.commit()
+            
+            return {"message": "Job marked as priority"}
+        
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action: {action.action}")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error handling job action: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Document generation endpoints
+@router.post("/jobs/{job_id}/generate-documents")
+async def generate_documents(
+    job_id: int,
+    generate: DocumentGenerate,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate resume and/or cover letter for a job"""
+    try:
+        from app.ai.document_generator import DocumentGenerator
+        from app.models import UserProfile
+        
+        result = await db.execute(select(Job).where(Job.id == job_id))
+        job = result.scalar_one_or_none()
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        # Get or create user profile (for now, use user_id=1)
+        result = await db.execute(select(UserProfile).where(UserProfile.user_id == 1))
+        user_profile = result.scalar_one_or_none()
+        
+        if not user_profile:
+            raise HTTPException(
+                status_code=400,
+                detail="User profile not found. Please create a user profile first."
+            )
+        
+        document_generator = DocumentGenerator()
+        generated_docs = []
+        
+        if "resume" in generate.document_types:
+            resume_doc = await document_generator.generate_resume(job, user_profile, db)
+            if resume_doc:
+                generated_docs.append({
+                    "id": resume_doc.id,
+                    "document_type": resume_doc.document_type,
+                    "generated_at": resume_doc.generated_at.isoformat(),
+                })
+        
+        if "cover_letter" in generate.document_types:
+            cover_letter_doc = await document_generator.generate_cover_letter(job, user_profile, db)
+            if cover_letter_doc:
+                generated_docs.append({
+                    "id": cover_letter_doc.id,
+                    "document_type": cover_letter_doc.document_type,
+                    "generated_at": cover_letter_doc.generated_at.isoformat(),
+                })
+        
+        return {
+            "message": f"Generated {len(generated_docs)} document(s)",
+            "job_id": job_id,
+            "documents": generated_docs
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error generating documents: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/jobs/{job_id}/documents")
+async def get_job_documents(
+    job_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """List all generated documents for a job"""
+    try:
+        result = await db.execute(
+            select(GeneratedDocument)
+            .where(GeneratedDocument.job_id == job_id)
+            .order_by(desc(GeneratedDocument.generated_at))
+        )
+        documents = result.scalars().all()
+        
+        return [
+            {
+                "id": doc.id,
+                "job_id": doc.job_id,
+                "document_type": doc.document_type,
+                "content": doc.content,
+                "generated_at": doc.generated_at.isoformat(),
+                "file_path": doc.file_path,
+            }
+            for doc in documents
+        ]
+    except Exception as e:
+        logger.error(f"Error loading documents: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/documents/{document_id}")
+async def get_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get document content"""
+    try:
+        result = await db.execute(select(GeneratedDocument).where(GeneratedDocument.id == document_id))
+        doc = result.scalar_one_or_none()
+        
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        return {
+            "id": doc.id,
+            "job_id": doc.job_id,
+            "document_type": doc.document_type,
+            "content": doc.content,
+            "generated_at": doc.generated_at.isoformat(),
+            "file_path": doc.file_path,
+            "job": {
+                "id": doc.job.id,
+                "title": doc.job.title,
+                "company": doc.job.company,
+            } if doc.job else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading document: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/documents/{document_id}")
+async def update_document(
+    document_id: int,
+    update: DocumentUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update document content after user edits"""
+    try:
+        result = await db.execute(select(GeneratedDocument).where(GeneratedDocument.id == document_id))
+        doc = result.scalar_one_or_none()
+        
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        doc.content = update.content
+        await db.commit()
+        
+        return {"message": "Document updated", "document_id": doc.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating document: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documents/{document_id}/finalize")
+async def finalize_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Mark document as finalized (lock for submission)"""
+    try:
+        result = await db.execute(select(GeneratedDocument).where(GeneratedDocument.id == document_id))
+        doc = result.scalar_one_or_none()
+        
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # In a full implementation, you might want to add a "finalized" boolean field
+        # For now, we'll just return success
+        await db.commit()
+        
+        return {"message": "Document finalized", "document_id": doc.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error finalizing document: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Search recipes endpoint
+@router.get("/automation/search-recipes")
+async def get_search_recipes():
+    """Get predefined search recipes for automation"""
+    try:
+        import json
+        from pathlib import Path
+        
+        recipe_path = Path(__file__).parent.parent / "search_recipes.json"
+        
+        if not recipe_path.exists():
+            # Return default recipes if file doesn't exist yet
+            return {
+                "recipes": [
+                    {
+                        "name": "Remote Senior Engineer Blitz",
+                        "description": "Target remote senior engineering roles at top tech companies",
+                        "keywords": "senior engineer, software engineer, remote",
+                        "location": None,
+                        "remote_only": True,
+                        "job_type": "full-time",
+                        "experience_level": "senior",
+                        "icon": "rocket"
+                    },
+                    {
+                        "name": "Local Startup Hunt",
+                        "description": "Find opportunities at local startups and growing companies",
+                        "keywords": "startup, software engineer, developer",
+                        "location": "San Francisco",
+                        "remote_only": False,
+                        "job_type": "full-time",
+                        "experience_level": "mid",
+                        "icon": "building"
+                    }
+                ]
+            }
+        
+        with open(recipe_path, "r") as f:
+            recipes_data = json.load(f)
+        
+        return {"recipes": recipes_data.get("recipes", [])}
+    
+    except Exception as e:
+        logger.error(f"Error loading search recipes: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Settings endpoints
 class SettingsRead(BaseModel):
     """Settings read model - returns all current settings"""
@@ -1740,6 +2609,9 @@ class SettingsRead(BaseModel):
     # OpenWebUI
     openwebui_enabled: bool
     openwebui_url: str
+    openwebui_api_key: Optional[str] = None
+    openwebui_auth_token: Optional[str] = None
+    openwebui_username: Optional[str] = None
 
 
 class SettingsUpdate(BaseModel):
@@ -1780,6 +2652,9 @@ class SettingsUpdate(BaseModel):
     # OpenWebUI
     openwebui_enabled: Optional[bool] = None
     openwebui_url: Optional[str] = None
+    openwebui_api_key: Optional[str] = None
+    openwebui_auth_token: Optional[str] = None
+    openwebui_username: Optional[str] = None
 
 
 @router.get("/settings")
@@ -1817,7 +2692,10 @@ async def get_settings(request: Request):
             ollama_host=settings.OLLAMA_HOST,
             ollama_model=settings.OLLAMA_MODEL,
             openwebui_enabled=settings.OPENWEBUI_ENABLED,
-            openwebui_url=settings.OPENWEBUI_URL
+            openwebui_url=settings.OPENWEBUI_URL,
+            openwebui_api_key=getattr(settings, 'OPENWEBUI_API_KEY', None),
+            openwebui_auth_token=getattr(settings, 'OPENWEBUI_AUTH_TOKEN', None),
+            openwebui_username=getattr(settings, 'OPENWEBUI_USERNAME', None)
         ).dict(),
         "telegram_active": telegram_active
     }
@@ -1939,6 +2817,12 @@ async def update_settings(request: Request, update: SettingsUpdate):
             settings.OPENWEBUI_ENABLED = updates["openwebui_enabled"]
         if "openwebui_url" in updates:
             settings.OPENWEBUI_URL = updates["openwebui_url"]
+        if "openwebui_api_key" in updates:
+            settings.OPENWEBUI_API_KEY = updates["openwebui_api_key"]
+        if "openwebui_auth_token" in updates:
+            settings.OPENWEBUI_AUTH_TOKEN = updates["openwebui_auth_token"]
+        if "openwebui_username" in updates:
+            settings.OPENWEBUI_USERNAME = updates["openwebui_username"]
         
         return {
             "message": "Settings updated successfully",
@@ -2024,4 +2908,87 @@ async def test_notification(request: Request):
     except Exception as e:
         logger.error(f"Error testing notification: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error testing notification: {str(e)}")
+
+
+# AI Chat endpoint
+class ChatMessage(BaseModel):
+    message: str
+    job_id: Optional[int] = None
+    context: Optional[dict] = None
+
+
+@router.post("/ai/chat")
+async def ai_chat(
+    chat: ChatMessage,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """AI chat endpoint for follow-up assistance"""
+    try:
+        from app.config import settings
+        import httpx
+        
+        # Build context from job if provided
+        context_info = ""
+        if chat.job_id:
+            result = await db.execute(select(Job).where(Job.id == chat.job_id))
+            job = result.scalar_one_or_none()
+            if job:
+                context_info = f"\n\nJob Context:\n- Title: {job.title}\n- Company: {job.company}\n- Location: {job.location}\n- Status: {job.status}\n- Match Score: {job.ai_match_score}%\n- Description: {job.description[:500] if job.description else 'N/A'}"
+        
+        # Build intelligent prompt
+        system_prompt = """You are an AI assistant helping with job search follow-ups and career advice. 
+        You provide practical, actionable guidance on:
+        - When to follow up on applications
+        - How to write effective follow-up emails
+        - Interview preparation
+        - Career strategy
+        
+        Be concise, professional, and helpful. Focus on actionable advice."""
+        
+        user_prompt = f"{chat.message}{context_info}"
+        
+        # Call Ollama API
+        ollama_url = f"{settings.OLLAMA_HOST}/api/chat"
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                ollama_url,
+                json={
+                    "model": settings.OLLAMA_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "stream": False
+                }
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                ai_response = data.get("message", {}).get("content", "I'm sorry, I couldn't generate a response.")
+                return {
+                    "response": ai_response,
+                    "model": settings.OLLAMA_MODEL
+                }
+            else:
+                logger.error(f"Ollama API error: {response.status_code} - {response.text}")
+                # Fallback response
+                return {
+                    "response": "I'm having trouble connecting to the AI service right now. Please try again later, or check your Ollama configuration.",
+                    "error": True
+                }
+                
+    except httpx.TimeoutException:
+        logger.error("Ollama API timeout")
+        return {
+            "response": "The AI service is taking too long to respond. Please try again with a simpler question.",
+            "error": True
+        }
+    except Exception as e:
+        logger.error(f"Error in AI chat: {e}", exc_info=True)
+        return {
+            "response": f"I encountered an error: {str(e)}. Please check your Ollama configuration and try again.",
+            "error": True
+        }
 

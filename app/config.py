@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     # OpenWebUI settings (point to your existing OpenWebUI instance)
     OPENWEBUI_ENABLED: bool = True
     OPENWEBUI_URL: str = "http://localhost:3000"  # Update to match your OpenWebUI URL
+    OPENWEBUI_API_KEY: Optional[str] = None  # API key for OpenWebUI API access
+    OPENWEBUI_AUTH_TOKEN: Optional[str] = None  # Auth token for user session
+    OPENWEBUI_USERNAME: Optional[str] = None  # Optional username for basic auth
     
     # Company lifecycle management settings
     COMPANY_TARGET_COUNT: int = 1500  # Target number of companies to maintain

@@ -1,0 +1,63 @@
+.app {
+  min-height: 100vh;
+}
+
+/* Loading states */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--text-muted);
+}
+
+/* Error states */
+.error {
+  padding: 16px;
+  background: #fee2e2;
+  border-left: 4px solid var(--danger);
+  border-radius: 8px;
+  color: #991b1b;
+  margin: 16px 0;
+}
+
+/* Empty states */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+}
+
+.empty-state svg {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  opacity: 0.5;
+}
+
+/* Card animations */
+.card-enter {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.card-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms, transform 300ms;
+}
+
+/* Button hover effects */
+.btn-hover-lift {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-hover-lift:active {
+  transform: translateY(0);
+}
+

@@ -41,10 +41,17 @@ async def lifespan(app: FastAPI):
         result = await load_companies_from_csv(min_companies=10)
         if result.get("success") and result.get("added", 0) > 0:
             logger.info(f"Loaded {result['added']} companies from companies.csv (fallback)")
+            if result.get("parsing_stats", {}).get("skipped_no_url", 0) > 0:
+                logger.warning(f"  Note: {result['parsing_stats']['skipped_no_url']} companies skipped due to missing URLs")
         elif result.get("reason") == "sufficient_companies":
             logger.debug(f"Company database has sufficient companies ({result.get('current_count', 0)})")
+        elif not result.get("success"):
+            error_msg = result.get("error") or result.get("reason", "unknown error")
+            logger.warning(f"Failed to load companies from CSV: {error_msg}")
+            logger.warning("  Use POST /api/companies/load-from-csv?force=true to manually load companies")
     except Exception as e:
         logger.warning(f"Failed to load companies from CSV: {e}", exc_info=True)
+        logger.warning("  Use POST /api/companies/load-from-csv?force=true to manually load companies")
     
     # Create orchestrator first (will be updated with bot agent)
     orchestrator = CrawlerOrchestrator(bot_agent=None)
@@ -128,11 +135,36 @@ async def lifespan(app: FastAPI):
         replace_existing=True
     )
     
+    # OpenWebUI health check
+    async def check_openwebui_health():
+        """Periodically check OpenWebUI health and cache status"""
+        try:
+            from app.services.openwebui_service import get_openwebui_service
+            service = get_openwebui_service()
+            if service.enabled:
+                # Get auth tokens from settings if available
+                api_key = getattr(settings, 'OPENWEBUI_API_KEY', None)
+                auth_token = getattr(settings, 'OPENWEBUI_AUTH_TOKEN', None)
+                health = await service.check_health(api_key, auth_token)
+                logger.debug(f"OpenWebUI health check: {health.get('status')}")
+        except Exception as e:
+            logger.debug(f"OpenWebUI health check error: {e}")
+    
+    # Schedule OpenWebUI health check every 5 minutes
+    scheduler.add_job(
+        check_openwebui_health,
+        trigger=IntervalTrigger(minutes=5),
+        id="check_openwebui_health",
+        name="Check OpenWebUI health",
+        replace_existing=True
+    )
+    
     scheduler.start()
     logger.info(f"Scheduler started:")
     logger.info(f"  - Crawling all companies every {settings.CRAWL_INTERVAL_MINUTES} minutes")
     logger.info(f"  - Refreshing company list daily at 2:00 AM")
     logger.info(f"  - Checking task reminders every {settings.TASK_REMINDER_CHECK_INTERVAL_MINUTES} minutes")
+    logger.info(f"  - Checking OpenWebUI health every 5 minutes")
     
     yield
     

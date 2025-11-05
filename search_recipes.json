@@ -1,0 +1,104 @@
+{
+  "recipes": [
+    {
+      "name": "Remote Senior Engineer Blitz",
+      "description": "Target remote senior engineering roles at top tech companies",
+      "keywords": "senior engineer, software engineer, remote",
+      "location": null,
+      "remote_only": true,
+      "job_type": "full-time",
+      "experience_level": "senior",
+      "icon": "rocket"
+    },
+    {
+      "name": "Local Startup Hunt",
+      "description": "Find opportunities at local startups and growing companies",
+      "keywords": "startup, software engineer, developer",
+      "location": "San Francisco",
+      "remote_only": false,
+      "job_type": "full-time",
+      "experience_level": "mid",
+      "icon": "building"
+    },
+    {
+      "name": "FAANG Targeted Search",
+      "description": "Focus on major tech companies (Facebook, Apple, Amazon, Netflix, Google) and similar tier",
+      "keywords": "software engineer, backend engineer, full stack",
+      "location": null,
+      "remote_only": false,
+      "job_type": "full-time",
+      "experience_level": "senior",
+      "icon": "star"
+    },
+    {
+      "name": "Full Stack Developer Focus",
+      "description": "Target full-stack development roles across all experience levels",
+      "keywords": "full stack developer, web developer, react, node.js",
+      "location": null,
+      "remote_only": true,
+      "job_type": "full-time",
+      "experience_level": null,
+      "icon": "layers"
+    },
+    {
+      "name": "Backend Systems Engineer",
+      "description": "Focus on backend and systems engineering roles",
+      "keywords": "backend engineer, systems engineer, distributed systems, python, golang",
+      "location": null,
+      "remote_only": true,
+      "job_type": "full-time",
+      "experience_level": "senior",
+      "icon": "server"
+    },
+    {
+      "name": "Entry Level Opportunities",
+      "description": "Discover entry-level and junior positions for career starters",
+      "keywords": "junior developer, entry level, software engineer, new grad",
+      "location": null,
+      "remote_only": false,
+      "job_type": "full-time",
+      "experience_level": "entry",
+      "icon": "graduation-cap"
+    },
+    {
+      "name": "Contract/Freelance Gigs",
+      "description": "Find short-term contract and freelance opportunities",
+      "keywords": "contract, freelance, consultant, software engineer",
+      "location": null,
+      "remote_only": true,
+      "job_type": "contract",
+      "experience_level": null,
+      "icon": "briefcase"
+    },
+    {
+      "name": "AI/ML Engineering Roles",
+      "description": "Target machine learning and AI engineering positions",
+      "keywords": "machine learning engineer, AI engineer, data scientist, ML",
+      "location": null,
+      "remote_only": true,
+      "job_type": "full-time",
+      "experience_level": "mid",
+      "icon": "brain"
+    },
+    {
+      "name": "DevOps & Infrastructure",
+      "description": "Focus on DevOps, SRE, and infrastructure engineering roles",
+      "keywords": "devops, SRE, site reliability engineer, infrastructure, kubernetes",
+      "location": null,
+      "remote_only": true,
+      "job_type": "full-time",
+      "experience_level": "mid",
+      "icon": "settings"
+    },
+    {
+      "name": "Aggressive Remote Search",
+      "description": "Maximum coverage remote-only search across all experience levels",
+      "keywords": "software engineer, developer, programmer, remote",
+      "location": null,
+      "remote_only": true,
+      "job_type": "full-time",
+      "experience_level": null,
+      "icon": "zap"
+    }
+  ]
+}

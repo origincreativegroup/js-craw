@@ -1,254 +1,449 @@
-# OpenWebUI Integration
+# OpenWebUI Complete Integration Guide
 
-OpenWebUI provides a beautiful, user-friendly chat interface for interacting with Ollama models. This integration enhances the job search system with AI-powered chat capabilities.
+OpenWebUI provides a beautiful, user-friendly chat interface for interacting with Ollama models. This guide covers the complete integration with database persistence, health monitoring, embedded chat interface, workflow automation, and secure authentication.
 
 ## Overview
 
-This system is designed to work with your existing OpenWebUI instance. Make sure your OpenWebUI is configured to use the same Ollama instance as the job crawler.
+The Job Crawler now features a complete OpenWebUI integration with:
 
-OpenWebUI allows you to:
+- **Database-backed settings persistence** - Settings survive container restarts
+- **Health monitoring** - Automatic health checks every 5 minutes
+- **Embedded chat panel** - Minimizable/maximizable iframe chat interface
+- **Workflow automation** - Send job context directly to OpenWebUI
+- **Full authentication support** - API keys and auth tokens with validation
+- **Frontend integration** - Native UI components throughout the app
 
-- **Chat with AI** about your job searches
-- **Get personalized advice** on job applications
-- **Analyze job descriptions** with AI assistance
-- **Generate resumes and cover letters** tailored to specific jobs
-- **Ask questions** about companies and roles
-- **Get interview preparation tips**
+## Infrastructure
 
-## Access
+**Service Locations:**
+- **OpenWebUI**: `https://ai.lan` (pi-forge:3000)
+- **Job Crawler**: `https://js-craw.lan` (pi-forge:8001)
+- **Ollama**: `https://ollama.nexus.lan` (ai-srv:11434)
 
-Use your existing OpenWebUI instance. Update the URL in configuration:
+All services are on the same network, accessible via Caddy reverse proxy.
 
-**In `.env` file:**
+## Quick Start
+
+### 1. Configure OpenWebUI URL
+
+Update your `.env` file:
 ```env
-OPENWEBUI_URL=http://your-openwebui-host:port
+OPENWEBUI_ENABLED=true
+OPENWEBUI_URL=https://ai.lan
 ```
 
 Or via API:
 ```bash
-curl http://localhost:8001/api/openwebui
+curl -X PATCH http://localhost:8001/api/settings \
+  -H "Content-Type: application/json" \
+  -d '{"openwebui_url": "https://ai.lan"}'
 ```
 
-## Configuration
+### 2. Set Up Authentication (Optional)
 
-### Job Crawler Configuration
+If your OpenWebUI requires authentication:
 
-Update your `.env` file or `app/config.py`:
-```python
-OPENWEBUI_URL = "http://your-openwebui-host:port"  # Your existing OpenWebUI URL
+```env
+OPENWEBUI_API_KEY=your_api_key_here
+OPENWEBUI_AUTH_TOKEN=your_auth_token_here
+OPENWEBUI_USERNAME=your_username_here
 ```
 
-### OpenWebUI Configuration
+### 3. Run Database Migration
 
-Make sure your existing OpenWebUI is configured to use the same Ollama instance:
+```bash
+python scripts/migrate_database.py
+python scripts/seed_settings.py
+```
 
-- **Ollama Host**: Should match `OLLAMA_HOST` in job crawler config
-- **Shared Ollama**: Both systems should point to the same Ollama instance (e.g., `http://192.168.50.248:11434`)
+### 4. Access OpenWebUI
+
+- **Embedded**: Click "Chat" button on any job card
+- **Full Screen**: Use "Open in New Tab" button in chat panel
+- **Settings**: Navigate to Settings page to configure and test connection
 
 ## Features
 
-### 1. Job Search Assistant
+### 1. Embedded Chat Panel
 
-Chat with the AI about your job search:
+The embedded chat panel provides a native chat experience within the job crawler interface:
 
-```
-You: "What are the best remote software engineering jobs for Python developers?"
+- **Minimize/Maximize**: Toggle between floating button and full panel
+- **Context-Aware**: Automatically includes job details when opened from job cards
+- **Responsive**: Works on desktop and mobile devices
+- **Persistent**: Chat history preserved across page navigations
 
-AI: [Provides tailored advice based on current job market]
-```
+**Access Points:**
+- Jobs page: "Chat" button on each job card
+- Follow-ups page: Toggle between AI Chat and OpenWebUI
+- Global: Persistent floating button (coming soon)
 
-### 2. Job Description Analysis
+### 2. Health Monitoring
 
-Paste a job description and get insights:
+Automatic health checks run every 5 minutes and cache results:
 
-```
-You: "Analyze this job description:
-[Paste job description]
+**Health Status:**
+- `online` - OpenWebUI is accessible
+- `online_authenticated` - OpenWebUI is accessible and authenticated
+- `offline` - OpenWebUI is not reachable
+- `error` - Health check failed
+- `disabled` - Integration is disabled
 
-What skills are most important? What are potential red flags?"
-```
+**View Health Status:**
+- Settings page: Real-time health indicator
+- API: `GET /api/openwebui/health`
+- Dashboard: Health status badge
 
-### 3. Resume/Cover Letter Generation
+### 3. Workflow Hand-offs
 
-Generate tailored documents:
+Send job context directly to OpenWebUI with intelligent prompt generation:
 
-```
-You: "Generate a cover letter for a Senior Software Engineer 
-position at [Company] emphasizing my Python and React experience."
-```
+**Available Actions:**
+- **Analyze**: Analyze job opportunity and provide insights
+- **Follow-up**: Generate follow-up email templates
+- **Interview Prep**: Generate interview questions and answers
+- **Cover Letter**: Create tailored cover letters
 
-### 4. Interview Preparation
+**How to Use:**
+1. Click "Chat" button on any job card
+2. Select prompt type (analyze, follow-up, interview_prep, cover_letter)
+3. Job context is automatically sent to OpenWebUI
+4. Chat interface opens with pre-seeded context
 
-Get interview tips:
-
-```
-You: "I have an interview for a DevOps Engineer role. 
-What technical questions should I prepare for?"
-```
-
-### 5. Company Research
-
-Ask about companies:
-
-```
-You: "Tell me about [Company Name]. What's their tech stack 
-and company culture like?"
-```
-
-## Use Cases
-
-### Scenario 1: Preparing for Applications
-
-1. Open OpenWebUI at http://localhost:3000
-2. Select a job from the dashboard
-3. Copy the job description
-4. In OpenWebUI, ask: "Help me prepare for this role: [paste description]"
-5. Get personalized advice and talking points
-
-### Scenario 2: Improving Your Profile
-
-1. Chat with AI about your skills
-2. Ask: "What skills should I learn to be competitive for [role type]?"
-3. Get recommendations based on current job market
-
-### Scenario 3: Cover Letter Generation
-
-1. Select a job you're interested in
-2. In OpenWebUI, provide your background and the job details
-3. Ask: "Write a compelling cover letter for this position"
-4. Review and customize the generated letter
-
-## Integration with Job Crawler
-
-### Data Flow
-
-```
-Job Crawler (Ollama)
-    ↓
-Analyzes jobs → Saves to database
-    ↓
-OpenWebUI (Ollama)
-    ↓
-Chat interface → Get insights about jobs
-```
-
-### API Integration
-
-The job crawler API provides information about OpenWebUI:
-
+**API Endpoint:**
 ```bash
-GET /api/openwebui
-```
-
-Response:
-```json
+POST /api/openwebui/send-context
 {
-  "enabled": true,
-  "url": "http://localhost:3000",
-  "ollama_host": "http://192.168.50.248:11434",
-  "ollama_model": "llama3.1",
-  "description": "OpenWebUI provides a chat interface...",
-  "features": [...]
+  "job_id": 123,
+  "prompt_type": "analyze"  # or "follow_up", "interview_prep", "cover_letter"
 }
 ```
 
-## Custom Prompts
+### 4. Authentication
 
-You can create custom prompts in OpenWebUI for common tasks:
+Full authentication support with token validation:
 
-### Prompt: Job Match Analyzer
+**Authentication Methods:**
+- **API Key**: For programmatic API access
+- **Auth Token**: For user session authentication
+- **Username**: Optional username for basic auth
 
+**Test Authentication:**
+- Settings page: "Test Authentication" button
+- API: `POST /api/openwebui/verify-auth`
+
+**Security:**
+- Tokens are encrypted in database
+- Never exposed in API responses
+- Validated before OpenWebUI API calls
+
+### 5. Settings Persistence
+
+All settings are now stored in the database:
+
+**Benefits:**
+- Settings survive container restarts
+- No need to edit `.env` file for changes
+- UI updates settings directly
+- Automatic migration from `.env` to database
+
+**Migration:**
+1. Run `python scripts/migrate_database.py` to create settings table
+2. Run `python scripts/seed_settings.py` to copy current config to database
+3. Settings are now persistent
+
+## API Endpoints
+
+### Get OpenWebUI Info
+```bash
+GET /api/openwebui
 ```
-You are a job search assistant. Analyze how well a job matches 
-the user's profile. Consider:
-- Required skills vs user's skills
-- Company culture fit
-- Growth opportunities
-- Compensation expectations
-- Work-life balance
+Returns configuration, health status, and capabilities.
 
-Provide a detailed analysis with a match score (0-100).
+### Health Check
+```bash
+GET /api/openwebui/health
+```
+Detailed health check with connectivity and capability information.
+
+### Verify Authentication
+```bash
+POST /api/openwebui/verify-auth
+{
+  "api_key": "optional",
+  "auth_token": "optional"
+}
+```
+Test authentication credentials.
+
+### Get Status
+```bash
+GET /api/openwebui/status
+```
+Combined health and authentication status.
+
+### Send Job Context
+```bash
+POST /api/openwebui/send-context
+{
+  "job_id": 123,
+  "prompt_type": "analyze"
+}
+```
+Send job context to OpenWebUI to create a new chat.
+
+## Frontend Integration
+
+### Jobs Page
+- "Chat" button on each job card opens embedded OpenWebUI chat
+- Context automatically includes job details
+- Chat panel appears as overlay
+
+### Follow-ups Page
+- Toggle between AI Chat and OpenWebUI chat
+- Both chat types available in sidebar
+- Context-aware based on selected recommendation
+
+### Settings Page
+- Configure OpenWebUI URL and authentication
+- Real-time health status indicator
+- Test connection and authentication buttons
+- View capabilities and health details
+
+### Embedded Chat Component
+- Minimizable/maximizable interface
+- Responsive design
+- Auto-authentication via token
+- Context injection support
+
+## Configuration
+
+### Environment Variables
+
+```env
+# Enable/disable integration
+OPENWEBUI_ENABLED=true
+
+# OpenWebUI URL
+OPENWEBUI_URL=https://ai.lan
+
+# Authentication (optional)
+OPENWEBUI_API_KEY=your_api_key
+OPENWEBUI_AUTH_TOKEN=your_auth_token
+OPENWEBUI_USERNAME=your_username
 ```
 
-### Prompt: Resume Optimizer
+### Database Settings
 
+Settings are stored in the `app_settings` table. Use the Settings page UI or API to update:
+
+```bash
+PATCH /api/settings
+{
+  "openwebui_url": "https://ai.lan",
+  "openwebui_api_key": "new_key"
+}
 ```
-You are a resume optimization expert. Review the user's resume 
-and suggest improvements for a specific job posting. Focus on:
-- Keyword optimization
-- Achievement quantification
-- Relevance highlighting
-- Format improvements
+
+## Health Monitoring
+
+### Automatic Health Checks
+
+Health checks run every 5 minutes automatically:
+- Tests connectivity to OpenWebUI
+- Validates authentication if configured
+- Caches results for performance
+- Updates status in real-time
+
+### Manual Health Check
+
+```bash
+GET /api/openwebui/health
 ```
+
+### Health Status Indicators
+
+- **Green**: Online and accessible
+- **Yellow**: Online but authentication issues
+- **Red**: Offline or error
+- **Gray**: Disabled
+
+## Workflow Examples
+
+### Example 1: Analyze Job Opportunity
+
+1. Browse jobs on Jobs page
+2. Click "Chat" button on a job card
+3. OpenWebUI chat opens with job context
+4. Ask: "What are the key requirements for this role?"
+5. Get AI-powered insights
+
+### Example 2: Generate Follow-up Email
+
+1. Select a job you've applied to
+2. Click "Chat" button
+3. Select "Follow-up" prompt type (via API or context menu)
+4. Job context sent to OpenWebUI
+5. Ask: "Help me write a professional follow-up email"
+6. Get tailored email template
+
+### Example 3: Interview Preparation
+
+1. Find a job with upcoming interview
+2. Open chat for that job
+3. Context includes job description and requirements
+4. Ask: "What technical questions should I prepare for?"
+5. Get interview question suggestions
 
 ## Troubleshooting
 
-### OpenWebUI Won't Start
+### OpenWebUI Not Accessible
 
-```bash
-# Check logs
-docker compose logs open-webui
+**Symptoms:** Health status shows "offline"
 
-# Restart service
-docker compose restart open-webui
+**Solutions:**
+1. Verify OpenWebUI URL is correct: `https://ai.lan`
+2. Check OpenWebUI is running: `ssh admin@pi-forge 'docker ps | grep openwebui'`
+3. Test connectivity: `curl https://ai.lan/api/v1/config`
+4. Check reverse proxy: Verify Caddy configuration on pi-net
+
+### Authentication Failing
+
+**Symptoms:** Health status shows "online" but auth_status is "invalid_token"
+
+**Solutions:**
+1. Verify API key or auth token is correct
+2. Test authentication in Settings page
+3. Check OpenWebUI authentication requirements
+4. Ensure token hasn't expired
+
+### Embedded Chat Not Loading
+
+**Symptoms:** Chat panel shows error or blank
+
+**Solutions:**
+1. Check browser console for CORS errors
+2. Verify OpenWebUI URL is accessible from browser
+3. Check iframe sandbox permissions
+4. Try "Open in New Tab" to test direct access
+
+### Settings Not Persisting
+
+**Symptoms:** Settings reset after container restart
+
+**Solutions:**
+1. Run database migration: `python scripts/migrate_database.py`
+2. Seed settings: `python scripts/seed_settings.py`
+3. Verify `app_settings` table exists
+4. Check database connection
+
+## Security Considerations
+
+1. **Token Encryption**: All authentication tokens are encrypted in database
+2. **HTTPS Only**: All OpenWebUI communication uses HTTPS
+3. **No Token Exposure**: Tokens never appear in API responses
+4. **Input Validation**: All OpenWebUI API inputs are validated
+5. **Rate Limiting**: Health checks are rate-limited to prevent abuse
+
+## Database Schema
+
+**app_settings Table:**
+```sql
+CREATE TABLE app_settings (
+    key VARCHAR(255) PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
 ```
 
-### Can't Connect to Ollama
+## Migration Steps
 
-Verify Ollama is accessible:
+1. **Run Migration:**
+   ```bash
+   python scripts/migrate_database.py
+   ```
+
+2. **Seed Settings:**
+   ```bash
+   python scripts/seed_settings.py
+   ```
+
+3. **Verify:**
+   ```bash
+   # Check settings table
+   psql -d job_crawler -c "SELECT key, value FROM app_settings WHERE key LIKE 'openwebui%';"
+   ```
+
+## API Examples
+
+### Get OpenWebUI Status
 ```bash
-# From host
-curl http://192.168.50.248:11434/api/tags
-
-# From OpenWebUI container
-docker exec job-crawler-openwebui curl http://192.168.50.248:11434/api/tags
+curl http://localhost:8001/api/openwebui/status
 ```
 
-### Model Not Available
-
-Make sure the model is downloaded on your Ollama server:
+### Send Job to OpenWebUI
 ```bash
-# On Ollama server (ai-srv)
-ollama pull llama3.1
-ollama pull llama2
+curl -X POST http://localhost:8001/api/openwebui/send-context \
+  -H "Content-Type: application/json" \
+  -d '{
+    "job_id": 123,
+    "prompt_type": "analyze"
+  }'
 ```
 
-## Security Notes
-
-1. **Change WEBUI_SECRET_KEY**: Update in docker-compose.yml for production
-2. **Access Control**: OpenWebUI has built-in user authentication
-3. **Network**: OpenWebUI only needs access to Ollama, not job crawler database
-4. **Data Privacy**: All AI processing happens locally, no data sent externally
-
-## Advanced Configuration
-
-### Custom Models
-
-Add more models to `DEFAULT_MODELS`:
-```yaml
-- DEFAULT_MODELS=llama3.1,llama2,mistral:7b
+### Test Authentication
+```bash
+curl -X POST http://localhost:8001/api/openwebui/verify-auth \
+  -H "Content-Type: application/json" \
+  -d '{
+    "api_key": "your_key",
+    "auth_token": "your_token"
+  }'
 ```
 
-### Persistence
+## Advanced Usage
 
-OpenWebUI data is stored in the `open_webui_data` Docker volume:
-```bash
-# Backup
-docker run --rm -v job-crawler_open_webui_data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/openwebui-backup.tar.gz /data
+### Custom Prompt Types
 
-# Restore
-docker run --rm -v job-crawler_open_webui_data:/data -v $(pwd):/backup \
-  alpine tar xzf /backup/openwebui-backup.tar.gz -C /
+You can extend the prompt types by modifying `app/services/openwebui_service.py`:
+
+```python
+def _format_context_prompt(self, context: Dict[str, Any]) -> str:
+    prompt_type = context.get("prompt_type", "analyze")
+    # Add custom prompt types here
+```
+
+### Background Health Checks
+
+Health checks run automatically every 5 minutes. To adjust interval, modify `main.py`:
+
+```python
+scheduler.add_job(
+    check_openwebui_health,
+    trigger=IntervalTrigger(minutes=5),  # Change interval here
+    ...
+)
+```
+
+### Custom Authentication
+
+To add custom authentication methods, extend `OpenWebUIService._get_auth_headers()`:
+
+```python
+def _get_auth_headers(self, api_key, auth_token):
+    # Add custom auth logic here
+    ...
 ```
 
 ## Resources
 
-- **OpenWebUI Docs**: https://docs.openwebui.com/
-- **Ollama Docs**: https://ollama.ai/docs
-- **Job Crawler API**: http://localhost:8001/docs
+- **OpenWebUI Documentation**: https://docs.openwebui.com/
+- **OpenWebUI API**: https://docs.openwebui.com/api
+- **Ollama Documentation**: https://ollama.ai/docs
+- **Job Crawler API Docs**: http://localhost:8001/docs
 
 ---
 
-**Status**: ✅ Integrated and Ready
-**Last Updated**: 2025-11-03
+**Status**: ✅ Complete Integration Ready  
+**Last Updated**: 2025-11-04  
+**Version**: 2.0
