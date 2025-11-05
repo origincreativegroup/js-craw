@@ -35,9 +35,11 @@ const AIChat = ({
 }: AIChatProps) => {
   const getInitialMessage = (): string => {
     if (jobTitle && company) {
-      return `I'm here to help you with follow-up strategies for **${jobTitle}** at **${company}**. I can help with:\n\n- When to follow up\n- Email templates\n- Interview prep\n- Career advice\n\nWhat would you like to know?`;
+      const title = jobTitle;
+      const comp = company;
+      return 'I\'m here to help you with follow-up strategies for **' + title + '** at **' + comp + '**. I can help with:\n\n- When to follow up\n- Email templates\n- Interview prep\n- Career advice\n\nWhat would you like to know?';
     }
-    return 'I'm your AI assistant for job search follow-ups. How can I help you today?';
+    return 'I\'m your AI assistant for job search follow-ups. How can I help you today?';
   };
 
   const [messages, setMessages] = useState<Message[]>([
