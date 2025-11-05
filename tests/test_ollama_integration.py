@@ -5,6 +5,7 @@ Run with: pytest tests/test_ollama_integration.py -v
 Or directly: python tests/test_ollama_integration.py
 """
 import asyncio
+import os
 import pytest
 import sys
 from pathlib import Path
@@ -18,6 +19,17 @@ from app.ai.document_generator import DocumentGenerator
 from app.config import settings
 from app.models import Job, UserProfile
 from datetime import datetime
+
+
+RUN_OLLAMA_TESTS = os.environ.get("RUN_OLLAMA_TESTS", "").strip() == "1"
+
+pytestmark = pytest.mark.skipif(
+    not RUN_OLLAMA_TESTS,
+    reason=(
+        "Ollama integration tests require a running Ollama instance. "
+        "Set RUN_OLLAMA_TESTS=1 to enable."
+    ),
+)
 
 
 class TestOllamaVerification:
