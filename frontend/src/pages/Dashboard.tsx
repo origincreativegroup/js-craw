@@ -37,7 +37,7 @@ const Dashboard = () => {
   const [stats, setStats] = useState<Stats | null>(null);
   const [crawlStatus, setCrawlStatus] = useState<CrawlStatus | null>(null);
   const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null);
-  const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
+  const [_discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
   const [topJobs, setTopJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   

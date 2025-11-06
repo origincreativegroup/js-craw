@@ -142,7 +142,7 @@ const CareerHub = () => {
     experience_level: ''
   });
   const [newLocation, setNewLocation] = useState('');
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [_profile, setProfile] = useState<UserProfile | null>(null);
 
   // Documents Tab State
   const [documents, setDocuments] = useState<UserDocument[]>([]);
