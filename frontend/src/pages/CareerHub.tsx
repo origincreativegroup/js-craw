@@ -337,13 +337,10 @@ const CareerHub = () => {
 
     const queueItems: FileUploadItem[] = fileArray.map((file) => ({
       file,
-      status: 'pending',
+      status: 'uploading' as const,
+      progress: 50,
     }));
     setUploadQueue(queueItems);
-
-    setUploadQueue((prev) =>
-      prev.map((item) => ({ ...item, status: 'uploading' as const, progress: 50 }))
-    ));
 
     try {
       const result = await uploadUserDocuments(fileArray);
