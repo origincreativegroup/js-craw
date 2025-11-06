@@ -260,7 +260,7 @@ const JobFileManager: React.FC<JobFileManagerProps> = ({ jobId, onRefresh }) => 
             <div className="viewer-header">
               <h3>
                 {selectedDocument.filename || 
-                 selectedDocument.document_type?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                 selectedDocument.document_type?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
                 {selectedDocument.version && ` v${selectedDocument.version}`}
               </h3>
               <button className="close-viewer" onClick={() => setSelectedDocument(null)}>×</button>

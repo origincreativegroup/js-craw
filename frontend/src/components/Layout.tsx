@@ -3,12 +3,8 @@ import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Briefcase, 
-  CheckSquare, 
-  Calendar, 
   Building2, 
   Sparkles,
-  Compass,
-  Briefcase as BriefcaseIcon,
   Zap
 } from 'lucide-react';
 import './Layout.css';

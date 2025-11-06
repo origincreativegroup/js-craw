@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Search, Filter, X } from 'lucide-react';
-import Card from '../components/Card';
+import { Search, X } from 'lucide-react';
 import Button from '../components/Button';
 import JobCard from '../components/JobCard';
 import JobDetailPanel from '../components/JobDetailPanel';

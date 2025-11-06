@@ -1094,6 +1094,76 @@ async def get_jobs(
     ]
 
 
+# Pipeline endpoints (must come before /jobs/{job_id} to avoid route conflicts)
+@router.get("/jobs/pipeline")
+async def get_jobs_pipeline(
+    stage: Optional[str] = None,
+    filter_type: Optional[str] = Query(None, description="Filter: 'high_match', 'recently_found', 'needs_action'"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get jobs organized by pipeline stage"""
+    try:
+        query = select(Job)
+        
+        # Filter by stage if provided
+        if stage:
+            query = query.where(Job.pipeline_stage == stage)
+        
+        # Apply additional filters
+        if filter_type == "high_match":
+            query = query.where(Job.ai_match_score >= 75)
+        elif filter_type == "recently_found":
+            query = query.where(Job.is_new == True)
+        elif filter_type == "needs_action":
+            # Jobs with pending tasks or upcoming follow-ups
+            from sqlalchemy import or_
+            query = query.where(
+                or_(
+                    Job.pipeline_stage.in_(["prepare", "apply", "follow_up"]),
+                    Job.status == "applied"
+                )
+            )
+        
+        query = query.order_by(desc(Job.discovered_at))
+        result = await db.execute(query)
+        jobs = result.scalars().all()
+        
+        # Organize by stage
+        jobs_by_stage = {
+            "discover": [],
+            "review": [],
+            "prepare": [],
+            "apply": [],
+            "follow_up": [],
+            "archive": []
+        }
+        
+        for job in jobs:
+            stage_key = job.pipeline_stage or "discover"
+            if stage_key not in jobs_by_stage:
+                stage_key = "discover"
+            jobs_by_stage[stage_key].append({
+                "id": job.id,
+                "title": job.title,
+                "company": job.company,
+                "location": job.location,
+                "url": job.url,
+                "status": job.status,
+                "pipeline_stage": job.pipeline_stage or "discover",
+                "ai_match_score": job.ai_match_score,
+                "ai_summary": job.ai_summary,
+                "ai_recommended": job.ai_recommended,
+                "is_new": job.is_new,
+                "discovered_at": job.discovered_at.isoformat() if job.discovered_at else None,
+                "posted_date": job.posted_date.isoformat() if job.posted_date else None,
+            })
+        
+        return jobs_by_stage
+    except Exception as e:
+        logger.error(f"Error getting pipeline jobs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting pipeline jobs: {str(e)}")
+
+
 @router.get("/jobs/{job_id}")
 async def get_job(
     job_id: int,
@@ -1231,76 +1301,6 @@ async def update_job(
             # Don't fail the update if follow-up task creation fails
     
     return {"message": "Job updated"}
-
-
-# Pipeline endpoints
-@router.get("/jobs/pipeline")
-async def get_jobs_pipeline(
-    stage: Optional[str] = None,
-    filter_type: Optional[str] = Query(None, description="Filter: 'high_match', 'recently_found', 'needs_action'"),
-    db: AsyncSession = Depends(get_db)
-):
-    """Get jobs organized by pipeline stage"""
-    try:
-        query = select(Job)
-        
-        # Filter by stage if provided
-        if stage:
-            query = query.where(Job.pipeline_stage == stage)
-        
-        # Apply additional filters
-        if filter_type == "high_match":
-            query = query.where(Job.ai_match_score >= 75)
-        elif filter_type == "recently_found":
-            query = query.where(Job.is_new == True)
-        elif filter_type == "needs_action":
-            # Jobs with pending tasks or upcoming follow-ups
-            from sqlalchemy import or_
-            query = query.where(
-                or_(
-                    Job.pipeline_stage.in_(["prepare", "apply", "follow_up"]),
-                    Job.status == "applied"
-                )
-            )
-        
-        query = query.order_by(desc(Job.discovered_at))
-        result = await db.execute(query)
-        jobs = result.scalars().all()
-        
-        # Organize by stage
-        jobs_by_stage = {
-            "discover": [],
-            "review": [],
-            "prepare": [],
-            "apply": [],
-            "follow_up": [],
-            "archive": []
-        }
-        
-        for job in jobs:
-            stage_key = job.pipeline_stage or "discover"
-            if stage_key not in jobs_by_stage:
-                stage_key = "discover"
-            jobs_by_stage[stage_key].append({
-                "id": job.id,
-                "title": job.title,
-                "company": job.company,
-                "location": job.location,
-                "url": job.url,
-                "status": job.status,
-                "pipeline_stage": job.pipeline_stage or "discover",
-                "ai_match_score": job.ai_match_score,
-                "ai_summary": job.ai_summary,
-                "ai_recommended": job.ai_recommended,
-                "is_new": job.is_new,
-                "discovered_at": job.discovered_at.isoformat() if job.discovered_at else None,
-                "posted_date": job.posted_date.isoformat() if job.posted_date else None,
-            })
-        
-        return jobs_by_stage
-    except Exception as e:
-        logger.error(f"Error getting pipeline jobs: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error getting pipeline jobs: {str(e)}")
 
 
 @router.patch("/jobs/{job_id}/pipeline-stage")

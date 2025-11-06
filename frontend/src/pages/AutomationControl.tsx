@@ -59,7 +59,7 @@ const AutomationControl = () => {
   
   // Unified state
   const [unifiedStatus, setUnifiedStatus] = useState<UnifiedStatus | null>(null);
-  const [unifiedCompanies, setUnifiedCompanies] = useState<UnifiedCompany[]>([]);
+  const [, setUnifiedCompanies] = useState<UnifiedCompany[]>([]);
   const [jobCrawlerAction, setJobCrawlerAction] = useState<string | null>(null);
   const [schedulerInterval, setSchedulerInterval] = useState<string>('');
   
@@ -282,7 +282,8 @@ const AutomationControl = () => {
     }
     try {
       await updateSchedulerInterval(interval);
-      await loadCrawlStatus();
+      // Refresh status after updating interval
+      await loadUnifiedData();
       addActivity('settings', `Scheduler interval updated to ${interval} minutes`, 'success');
     } catch (error) {
       console.error('Error updating scheduler interval:', error);
