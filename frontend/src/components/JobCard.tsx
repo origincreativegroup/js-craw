@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Building2, MapPin, Sparkles, ExternalLink, ChevronDown, ChevronUp, Zap } from 'lucide-react';
+import { Building2, MapPin, Sparkles, ExternalLink, ChevronDown, ChevronUp, Zap, MessageSquare } from 'lucide-react';
 import Card from './Card';
 import Button from './Button';
 import type { Job } from '../types';
@@ -11,10 +11,26 @@ interface JobCardProps {
   onQueueApplication?: (jobId: number) => void;
   onMarkPriority?: (jobId: number) => void;
   onViewDetails?: (jobId: number) => void;
+  onAnalyze?: (jobId: number) => void;
+  onSuggestions?: (jobId: number) => void;
+  onChat?: (job: Job) => void;
+  analyzing?: boolean;
   showActions?: boolean;
+  customActions?: React.ReactNode;
 }
 
-const JobCard = ({ job, onQueueApplication, onMarkPriority, onViewDetails, showActions = true }: JobCardProps) => {
+const JobCard = ({ 
+  job, 
+  onQueueApplication, 
+  onMarkPriority, 
+  onViewDetails, 
+  onAnalyze,
+  onSuggestions,
+  onChat,
+  analyzing = false,
+  showActions = true,
+  customActions
+}: JobCardProps) => {
   const [expanded, setExpanded] = useState(false);
 
   const getScoreColor = (score?: number) => {
@@ -162,32 +178,69 @@ const JobCard = ({ job, onQueueApplication, onMarkPriority, onViewDetails, showA
         </div>
         {showActions && (
           <div className="job-actions">
-            {onQueueApplication && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleQueueApplication}
-              >
-                Queue Application
-              </Button>
+            {customActions ? (
+              customActions
+            ) : (
+              <>
+                {onQueueApplication && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleQueueApplication}
+                  >
+                    Queue Application
+                  </Button>
+                )}
+                {onMarkPriority && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleMarkPriority}
+                  >
+                    Mark Priority
+                  </Button>
+                )}
+                {onAnalyze && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<Sparkles size={16} />}
+                    onClick={() => onAnalyze(job.id)}
+                    loading={analyzing}
+                  >
+                    Re-analyze
+                  </Button>
+                )}
+                {onSuggestions && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onSuggestions(job.id)}
+                    loading={analyzing}
+                  >
+                    Next steps
+                  </Button>
+                )}
+                {onChat && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<MessageSquare size={16} />}
+                    onClick={() => onChat(job)}
+                  >
+                    Chat
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<ExternalLink size={16} />}
+                  onClick={handleViewDetails}
+                >
+                  View Details
+                </Button>
+              </>
             )}
-            {onMarkPriority && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleMarkPriority}
-              >
-                Mark Priority
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<ExternalLink size={16} />}
-              onClick={handleViewDetails}
-            >
-              View Details
-            </Button>
           </div>
         )}
       </div>
