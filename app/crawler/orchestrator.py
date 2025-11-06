@@ -13,6 +13,10 @@ from app.crawler.generic_crawler import GenericCrawler
 from app.crawler.indeed_crawler import IndeedCrawler
 from app.crawler.linkedin_crawler import LinkedInCrawler
 from app.crawler.fallback_manager import CrawlFallbackManager
+from app.crawler.method_detector import MethodDetector
+from app.crawler.browser_crawler import BrowserCrawler
+from app.crawler.puppeteer_service import PuppeteerService
+from app.crawler.api_fetcher import ApiFetcher
 from app.config import Settings, settings
 from app.ai.analyzer import JobAnalyzer
 from app.ai.job_filter import JobFilter
@@ -30,6 +34,8 @@ class CrawlerOrchestrator:
         self.analyzer = JobAnalyzer()
         self.job_filter = JobFilter()  # AI-powered job filter
         self.notifier = NotificationService(bot_agent=bot_agent)
+        # Initialize method detector for auto-detection
+        self.method_detector = MethodDetector()
         # Initialize fallback manager with primary crawler method
         self.fallback_manager = CrawlFallbackManager(self._crawl_company_primary)
         # Ensure only one crawl runs at a time
@@ -518,11 +524,12 @@ class CrawlerOrchestrator:
         return results
 
     async def _crawl_company_primary(self, company: Company) -> List[Dict]:
-        """Primary crawler method - crawls a specific company's career page"""
+        """Primary crawler method - crawls a specific company's career page with auto-detection"""
         crawler_type = company.crawler_type
         config = company.crawler_config or {}
 
         try:
+            # Handle explicit crawler types first (backward compatibility)
             if crawler_type == 'greenhouse':
                 slug = config.get('slug', company.name.lower())
                 crawler = GreenhouseCrawler(slug, company.name)
@@ -594,9 +601,107 @@ class CrawlerOrchestrator:
                 crawler.close()
                 return jobs
 
+            # Auto-detect method for generic/unknown crawler types
             else:
-                logger.warning(f"Unknown crawler type: {crawler_type}")
-                return []
+                # Use method detector to determine best approach
+                if settings.API_DETECTION_ENABLED:
+                    detected_method, method_config = await self.method_detector.detect_method(
+                        company.name,
+                        company.career_page_url,
+                        config
+                    )
+
+                    # Update config with detection result (cache it)
+                    if method_config.get('method_detection_cache'):
+                        config.update(method_config)
+                        # Note: We don't update the DB here to avoid blocking, but config is cached in memory
+
+                    # Route to appropriate crawler based on detection
+                    if detected_method == 'api':
+                        api_type = method_config.get('method_config', {}).get('api_type')
+                        if api_type == 'greenhouse':
+                            slug = method_config.get('method_config', {}).get('slug')
+                            if slug:
+                                crawler = GreenhouseCrawler(slug, company.name)
+                                jobs = await crawler.fetch_jobs()
+                                crawler.close()
+                                return jobs
+                        elif api_type == 'lever':
+                            slug = method_config.get('method_config', {}).get('slug')
+                            if slug:
+                                crawler = LeverCrawler(slug, company.name)
+                                jobs = await crawler.fetch_jobs()
+                                crawler.close()
+                                return jobs
+                        else:
+                            # Use API fetcher for other API types
+                            fetcher = ApiFetcher(company.name, company.career_page_url)
+                            jobs = await fetcher.fetch_jobs()
+                            await fetcher.close()
+                            return jobs
+
+                    elif detected_method == 'browser':
+                        if settings.BROWSER_ENABLED:
+                            # Try Puppeteer first (if available), then Playwright
+                            try:
+                                puppeteer = PuppeteerService()
+                                if await puppeteer.health_check():
+                                    browser_config = method_config.get('method_config', {})
+                                    jobs = await puppeteer.crawl(
+                                        company.name,
+                                        company.career_page_url,
+                                        timeout=settings.PLAYWRIGHT_TIMEOUT,
+                                        wait_for_selector=browser_config.get('wait_for_selector'),
+                                        wait_timeout=settings.PLAYWRIGHT_TIMEOUT
+                                    )
+                                    if jobs:
+                                        return jobs
+                                else:
+                                    logger.debug(f"Puppeteer service not available, falling back to Playwright")
+                            except Exception as e:
+                                logger.debug(f"Puppeteer service error: {e}, falling back to Playwright")
+
+                            # Fallback to Playwright
+                            browser_config = method_config.get('method_config', {})
+                            crawler = BrowserCrawler(
+                                company.name,
+                                company.career_page_url,
+                                timeout=settings.PLAYWRIGHT_TIMEOUT,
+                                headless=settings.BROWSER_HEADLESS,
+                                wait_for_selector=browser_config.get('wait_for_selector'),
+                                wait_timeout=settings.PLAYWRIGHT_TIMEOUT
+                            )
+                            jobs = await crawler.fetch_jobs()
+                            await crawler.close()
+                            return jobs
+                        else:
+                            logger.debug(f"Browser crawling disabled, falling back to generic")
+                            # Fall through to generic
+
+                    elif detected_method == 'html':
+                        # Use generic crawler with HTML parsing (it handles static HTML well)
+                        settings_obj = Settings()
+                        crawler = GenericCrawler(
+                            company.name,
+                            company.career_page_url,
+                            ollama_host=settings_obj.OLLAMA_HOST,
+                            ollama_model=settings_obj.OLLAMA_MODEL
+                        )
+                        jobs = await crawler.fetch_jobs()
+                        crawler.close()
+                        return jobs
+
+                # Default to generic crawler (AI-assisted)
+                settings_obj = Settings()
+                crawler = GenericCrawler(
+                    company.name,
+                    company.career_page_url,
+                    ollama_host=settings_obj.OLLAMA_HOST,
+                    ollama_model=settings_obj.OLLAMA_MODEL
+                )
+                jobs = await crawler.fetch_jobs()
+                crawler.close()
+                return jobs
 
         except Exception as e:
             logger.error(f"Error in company crawler: {e}", exc_info=True)

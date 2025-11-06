@@ -44,6 +44,24 @@ services:
       timeout: 5s
       retries: 5
 
+  puppeteer-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.puppeteer
+    container_name: job-crawler-puppeteer
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    shm_size: 2gb
+
   job-crawler:
     build: .
     container_name: job-crawler-app
@@ -54,11 +72,14 @@ services:
         condition: service_healthy
       selenium-chrome:
         condition: service_healthy
+      puppeteer-service:
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/job_crawler
       - REDIS_URL=redis://redis:6379/0
       - SELENIUM_HOST=http://selenium-chrome:4444/wd/hub
       - OLLAMA_HOST=http://192.168.50.248:11434
+      - PUPPETEER_SERVICE_URL=http://puppeteer-service:3000
     env_file:
       - .env
     ports:

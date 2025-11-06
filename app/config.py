@@ -98,6 +98,16 @@ class Settings(BaseSettings):
     HTTP_RATE_PER_HOST: float = 1.0
     HTTP_BURST_PER_HOST: int = 2
     
+    # Browser automation settings
+    BROWSER_ENABLED: bool = True  # Enable browser-based crawling (Playwright/Puppeteer)
+    PUPPETEER_SERVICE_URL: str = "http://puppeteer-service:3000"  # Node.js Puppeteer service URL
+    PLAYWRIGHT_TIMEOUT: int = 30000  # Playwright page load timeout in milliseconds
+    BROWSER_CONCURRENT_LIMIT: int = 2  # Max concurrent browser instances (for resource-constrained devices)
+    BROWSER_HEADLESS: bool = True  # Run browsers in headless mode
+    
+    # API detection settings
+    API_DETECTION_ENABLED: bool = True  # Enable auto-detection of API endpoints
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

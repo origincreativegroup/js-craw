@@ -1,0 +1,26 @@
+{
+  "name": "js-craw-puppeteer-service",
+  "version": "1.0.0",
+  "description": "Puppeteer service for browser automation in js-craw",
+  "main": "services/puppeteer-service.js",
+  "scripts": {
+    "start": "node services/puppeteer-service.js",
+    "test": "node scripts/browser_test.js"
+  },
+  "keywords": [
+    "puppeteer",
+    "browser-automation",
+    "crawler"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^21.6.1",
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+
