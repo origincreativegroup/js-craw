@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
-import { getCrawlStatus } from '../services/api';
+import { getCrawlStatus, getDiscoveryStatus, getSchedulerStatus, triggerCrawl, pauseScheduler, resumeScheduler, cancelCrawl } from '../services/api';
 import type { CrawlStatus } from '../types';
 import './Automation.css';
 
@@ -40,22 +40,14 @@ const Automation = () => {
 
   const loadData = async () => {
     try {
-      const [crawlData, discoveryData] = await Promise.all([
+      const [crawlData, discoveryData, schedulerData] = await Promise.all([
         getCrawlStatus(),
-        fetch('/api/companies/discovery/status').then(r => r.json()),
+        getDiscoveryStatus().catch(() => null),
+        getSchedulerStatus().catch(() => null),
       ]);
       setCrawlStatus(crawlData);
       setDiscoveryStatus(discoveryData);
-
-      try {
-        const response = await fetch('/api/automation/scheduler');
-        if (response.ok) {
-          const schedulerData = await response.json();
-          setSchedulerStatus(schedulerData);
-        }
-      } catch (e) {
-        console.log('Scheduler endpoint not available');
-      }
+      setSchedulerStatus(schedulerData);
     } catch (error) {
       console.error('Error loading automation data:', error);
     } finally {

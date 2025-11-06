@@ -214,6 +214,14 @@ export const getSchedulerStatus = async (): Promise<{
   return response.data;
 };
 
+export const pauseScheduler = async (): Promise<void> => {
+  await api.post('/automation/pause');
+};
+
+export const resumeScheduler = async (): Promise<void> => {
+  await api.post('/automation/resume');
+};
+
 // Searches
 export const getSearches = async (): Promise<SearchCriteria[]> => {
   const response = await api.get('/searches');

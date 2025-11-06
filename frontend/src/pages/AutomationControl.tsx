@@ -23,6 +23,11 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import {
   getCrawlStatus,
+  triggerCrawl,
+  cancelCrawl,
+  pauseScheduler,
+  resumeScheduler,
+  getSchedulerStatus,
   updateSchedulerInterval,
   updateDiscoveryInterval,
   getDiscoveryStatus,
@@ -138,7 +143,7 @@ const AutomationControl = () => {
     try {
       const [crawlData, schedulerData] = await Promise.all([
         getCrawlStatus(),
-        fetch('/api/automation/scheduler').then(r => r.ok ? r.json() : null).catch(() => null),
+        getSchedulerStatus().catch(() => null),
       ]);
       setCrawlStatus(crawlData);
       setSchedulerStatus(schedulerData);
@@ -199,11 +204,7 @@ const AutomationControl = () => {
   const handleJobCrawlerStart = async () => {
     setJobCrawlerAction('start');
     try {
-      const response = await fetch('/api/crawl/run?crawl_type=all', { method: 'POST' });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to start job crawler (${response.status})`);
-      }
+      await triggerCrawl('all');
       setTimeout(() => loadCrawlStatus(), 1000);
       addActivity('crawl', 'Job crawler started', 'success');
     } catch (error: any) {
@@ -218,11 +219,7 @@ const AutomationControl = () => {
   const handleJobCrawlerPause = async () => {
     setJobCrawlerAction('pause');
     try {
-      const response = await fetch('/api/automation/pause', { method: 'POST' });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to pause job crawler (${response.status})`);
-      }
+      await pauseScheduler();
       setTimeout(() => loadCrawlStatus(), 1000);
       addActivity('crawl', 'Job crawler paused', 'info');
     } catch (error: any) {
@@ -236,11 +233,7 @@ const AutomationControl = () => {
   const handleJobCrawlerResume = async () => {
     setJobCrawlerAction('resume');
     try {
-      const response = await fetch('/api/automation/resume', { method: 'POST' });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to resume job crawler (${response.status})`);
-      }
+      await resumeScheduler();
       setTimeout(() => loadCrawlStatus(), 1000);
       addActivity('crawl', 'Job crawler resumed', 'success');
     } catch (error: any) {
@@ -257,11 +250,7 @@ const AutomationControl = () => {
     }
     setJobCrawlerAction('stop');
     try {
-      const response = await fetch('/api/crawl/cancel', { method: 'POST' });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to stop job crawler (${response.status})`);
-      }
+      await cancelCrawl();
       setTimeout(() => loadCrawlStatus(), 1000);
       addActivity('crawl', 'Job crawler stopped', 'warning');
     } catch (error: any) {
