@@ -5,7 +5,7 @@ import Button from '../components/Button';
 import OpenWebUIChat from '../components/OpenWebUIChat';
 import { getJobs, analyzeJob, createTask } from '../services/api';
 import type { Job, SuggestedStep, AnalyzeJobResponse } from '../types';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import './Jobs.css';
 
 const Jobs = () => {
@@ -223,11 +223,11 @@ const Jobs = () => {
                 <div className="job-dates">
                   {job.posted_date && (
                     <span className="date-info">
-                      Posted: {format(new Date(job.posted_date), 'MMM d, yyyy')}
+                      Posted: {format(parseISO(job.posted_date), 'MMM d, yyyy')}
                     </span>
                   )}
                   <span className="date-info">
-                    Found: {format(new Date(job.discovered_at), 'MMM d, yyyy')}
+                    Found: {format(parseISO(job.discovered_at), 'MMM d, yyyy')}
                   </span>
                 </div>
                 <div className="job-actions">

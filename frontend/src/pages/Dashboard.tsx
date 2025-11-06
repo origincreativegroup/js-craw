@@ -23,7 +23,7 @@ import {
   getDiscoveryStatus
 } from '../services/api';
 import type { Stats, CrawlStatus, Job, DiscoveryStatus, CrawlerHealth } from '../types';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import './Dashboard.css';
 
 interface SchedulerStatus {
@@ -133,7 +133,7 @@ const Dashboard = () => {
   const formatNextRun = (nextRun?: string) => {
     if (!nextRun) return 'N/A';
     try {
-      return format(new Date(nextRun), 'MMM d, h:mm a');
+      return format(parseISO(nextRun), 'MMM d, h:mm a');
     } catch {
       return nextRun;
     }

@@ -35,7 +35,7 @@ import {
   verifyOpenWebUIAuth,
 } from '../services/api';
 import type { CrawlStatus, DiscoveryStatus, PendingCompany } from '../types';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import './AutomationControl.css';
 
 interface OpenWebUIInfo {
@@ -867,7 +867,7 @@ const AutomationControl = () => {
                         <div className="detail-item">
                           <span className="detail-label">Discovered:</span>
                           <span className="detail-value">
-                            {format(new Date(company.created_at), 'MMM d, yyyy')}
+                            {format(parseISO(company.created_at), 'MMM d, yyyy')}
                           </span>
                         </div>
                       </div>
@@ -960,7 +960,7 @@ const AutomationControl = () => {
                       <div className="activity-content">
                         <div className="activity-message">{activity.message}</div>
                         <div className="activity-time">
-                          {format(new Date(activity.timestamp), 'MMM d, yyyy HH:mm:ss')}
+                          {format(parseISO(activity.timestamp), 'MMM d, yyyy HH:mm:ss')}
                         </div>
                       </div>
                     </div>
@@ -1117,7 +1117,7 @@ const AutomationControl = () => {
                         <div className="health-detail-item">
                           <span className="health-detail-label">Last Checked:</span>
                           <span className="health-detail-value">
-                            {new Date(healthStatus.health.last_checked).toLocaleString()}
+                            {format(parseISO(healthStatus.health.last_checked), 'MMM d, yyyy h:mm a')}
                           </span>
                         </div>
                       )}

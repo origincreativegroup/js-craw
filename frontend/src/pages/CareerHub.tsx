@@ -61,7 +61,7 @@ import type {
   GeneratedDocument,
   Job,
 } from '../types';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import './CareerHub.css';
 
 type ApplicationStatus = 'queued' | 'drafting' | 'submitted' | 'interviewing' | 'rejected' | 'accepted';
@@ -1534,7 +1534,7 @@ const CareerHub = () => {
                             {resume ? (
                               <div className="document-content">
                                 <p className="document-status">
-                                  Generated {format(new Date(resume.generated_at), 'MMM d, yyyy')}
+                                  Generated {format(parseISO(resume.generated_at), 'MMM d, yyyy')}
                                 </p>
                                 <Button
                                   variant="secondary"
@@ -1577,7 +1577,7 @@ const CareerHub = () => {
                             {coverLetter ? (
                               <div className="document-content">
                                 <p className="document-status">
-                                  Generated {format(new Date(coverLetter.generated_at), 'MMM d, yyyy')}
+                                  Generated {format(parseISO(coverLetter.generated_at), 'MMM d, yyyy')}
                                 </p>
                                 <Button
                                   variant="secondary"

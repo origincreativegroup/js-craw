@@ -3,7 +3,7 @@ import { Building2, MapPin, Sparkles, ExternalLink, ChevronDown, ChevronUp, Zap 
 import Card from './Card';
 import Button from './Button';
 import type { Job } from '../types';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import './JobCard.css';
 
 interface JobCardProps {
@@ -153,11 +153,11 @@ const JobCard = ({ job, onQueueApplication, onMarkPriority, onViewDetails, showA
         <div className="job-dates">
           {job.posted_date && (
             <span className="date-info">
-              Posted: {format(new Date(job.posted_date), 'MMM d, yyyy')}
+              Posted: {format(parseISO(job.posted_date), 'MMM d, yyyy')}
             </span>
           )}
           <span className="date-info">
-            Found: {format(new Date(job.discovered_at), 'MMM d, yyyy')}
+            Found: {format(parseISO(job.discovered_at), 'MMM d, yyyy')}
           </span>
         </div>
         {showActions && (
