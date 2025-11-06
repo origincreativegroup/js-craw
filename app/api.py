@@ -1981,43 +1981,77 @@ class OpenWebUIContextRequest(BaseModel):
     prompt_type: Optional[str] = "analyze"  # analyze, follow_up, interview_prep, cover_letter
 
 
-@router.post("/openwebui/send-context")
-async def send_context_to_openwebui(
-    context_request: OpenWebUIContextRequest,
-    request: Request,
+@router.get("/openwebui/context/full")
+async def get_full_context(
+    limit_per_type: int = Query(50, description="Maximum records per entity type"),
+    days_back: int = Query(30, description="Number of days to look back"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Send job context to OpenWebUI to create a new chat"""
+    """Get full dataset context for OpenWebUI chat"""
+    try:
+        from app.services.chat_context_service import ChatContextService
+        
+        context_service = ChatContextService()
+        context = await context_service.get_full_context(
+            db,
+            limit_per_type=limit_per_type,
+            days_back=days_back
+        )
+        
+        return context
+    except Exception as e:
+        logger.error(f"Error getting full context: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/openwebui/send-context")
+async def send_context_to_openwebui(
+    context_request: Optional[OpenWebUIContextRequest] = None,
+    full_context: Optional[Dict] = Body(None),
+    prompt_type: Optional[str] = Body("analyze"),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Send job context or full dataset context to OpenWebUI to create a new chat"""
     from app.services.openwebui_service import get_openwebui_service
     from app.config import settings
     
     try:
-        # Get job details
-        result = await db.execute(select(Job).where(Job.id == context_request.job_id))
-        job = result.scalar_one_or_none()
-        
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
-        
-        # Format job context
-        job_context = {
-            "id": job.id,
-            "title": job.title,
-            "company": job.company,
-            "location": job.location,
-            "description": job.description,
-            "ai_match_score": job.ai_match_score,
-            "ai_summary": job.ai_summary,
-            "ai_pros": job.ai_pros,
-            "ai_cons": job.ai_cons,
-            "url": job.url,
-            "status": job.status
-        }
-        
-        context = {
-            "job": job_context,
-            "prompt_type": context_request.prompt_type
-        }
+        # Handle full context request
+        if full_context:
+            context = {
+                **full_context,
+                "prompt_type": prompt_type
+            }
+        elif context_request:
+            # Get job details
+            result = await db.execute(select(Job).where(Job.id == context_request.job_id))
+            job = result.scalar_one_or_none()
+            
+            if not job:
+                raise HTTPException(status_code=404, detail="Job not found")
+            
+            # Format job context
+            job_context = {
+                "id": job.id,
+                "title": job.title,
+                "company": job.company,
+                "location": job.location,
+                "description": job.description,
+                "ai_match_score": job.ai_match_score,
+                "ai_summary": job.ai_summary,
+                "ai_pros": job.ai_pros,
+                "ai_cons": job.ai_cons,
+                "url": job.url,
+                "status": job.status
+            }
+            
+            context = {
+                "job": job_context,
+                "prompt_type": context_request.prompt_type
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Either context_request or full_context must be provided")
         
         # Get auth tokens from settings
         api_key = getattr(settings, 'OPENWEBUI_API_KEY', None)
@@ -2639,6 +2673,128 @@ async def delete_application(
     except Exception as e:
         await db.rollback()
         logger.error(f"Error deleting application: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/jobs/archive-old")
+async def archive_old_jobs(
+    days_old: int = Query(90, description="Archive jobs older than this many days"),
+    dry_run: bool = Query(False, description="If true, only count jobs without archiving"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Archive jobs older than specified days"""
+    try:
+        from app.services.job_archival_service import JobArchivalService
+        
+        archival_service = JobArchivalService()
+        result = await archival_service.archive_old_jobs(
+            db,
+            days_old=days_old,
+            dry_run=dry_run
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error archiving jobs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/jobs/{job_id}/unarchive")
+async def unarchive_job(
+    job_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Unarchive a job"""
+    try:
+        from app.services.job_archival_service import JobArchivalService
+        
+        archival_service = JobArchivalService()
+        job = await archival_service.unarchive_job(db, job_id)
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        return {"message": "Job unarchived", "job_id": job.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unarchiving job: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/jobs/archived/count")
+async def get_archived_jobs_count(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get count of archived jobs"""
+    try:
+        from app.services.job_archival_service import JobArchivalService
+        
+        archival_service = JobArchivalService()
+        count = await archival_service.get_archived_jobs_count(db)
+        
+        return {"count": count}
+    except Exception as e:
+        logger.error(f"Error getting archived jobs count: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/jobs/{job_id}/feedback")
+async def submit_job_feedback(
+    job_id: int,
+    feedback_type: str = Query(..., description="Type of feedback: match_score, recommendation, quality"),
+    feedback_value: str = Query(..., description="Feedback value: positive, negative, neutral, or numeric"),
+    feedback_text: Optional[str] = Query(None, description="Optional text feedback"),
+    ai_match_score_actual: Optional[float] = Query(None, description="User's assessment of actual match score"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit feedback on a job recommendation"""
+    try:
+        from app.services.ai_feedback_service import AIFeedbackService
+        
+        # Verify job exists
+        result = await db.execute(select(Job).where(Job.id == job_id))
+        job = result.scalar_one_or_none()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        feedback_service = AIFeedbackService()
+        feedback = await feedback_service.submit_feedback(
+            db,
+            job_id,
+            feedback_type,
+            feedback_value,
+            feedback_text,
+            ai_match_score_actual
+        )
+        
+        return {
+            "message": "Feedback submitted",
+            "feedback_id": feedback.id,
+            "job_id": job_id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/jobs/feedback/stats")
+async def get_feedback_stats(
+    days: int = Query(30, description="Number of days to look back"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get feedback statistics for analysis"""
+    try:
+        from app.services.ai_feedback_service import AIFeedbackService
+        
+        feedback_service = AIFeedbackService()
+        stats = await feedback_service.get_feedback_stats(db, days=days)
+        
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting feedback stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

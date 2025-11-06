@@ -191,7 +191,8 @@ class OpenWebUIService:
             headers = self._get_auth_headers(api_key, auth_token)
             
             # Format the context as a prompt
-            prompt = self._format_context_prompt(context)
+            is_full_context = "summary" in context and "companies" in context
+            prompt = self._format_context_prompt(context, is_full_context=is_full_context)
             
             # Try to create a new chat via OpenWebUI API
             # OpenWebUI API endpoint: POST /api/v1/chats
@@ -205,9 +206,22 @@ class OpenWebUIService:
                 
                 for endpoint in chat_endpoints:
                     try:
+                        # Determine chat name based on context type
+                        if is_full_context:
+                            # Full dataset context - use summary or generic name
+                            summary = context.get("summary", {})
+                            if summary:
+                                total_jobs = summary.get("total_jobs", 0)
+                                chat_name = f"Job Search Analysis ({total_jobs} jobs)"
+                            else:
+                                chat_name = "Job Search Analysis"
+                        else:
+                            # Single job context - use job title
+                            chat_name = context.get("job", {}).get("title", "Job Analysis")
+                        
                         # Create chat with initial message
                         chat_data = {
-                            "name": context.get("job", {}).get("title", "Job Analysis")[:100],
+                            "name": chat_name[:100],
                             "messages": [
                                 {
                                     "role": "user",
@@ -251,8 +265,13 @@ class OpenWebUIService:
                 "error": f"Failed to send context: {str(e)}"
             }
     
-    def _format_context_prompt(self, context: Dict[str, Any]) -> str:
+    def _format_context_prompt(self, context: Dict[str, Any], is_full_context: bool = False) -> str:
         """Format job context as a prompt for OpenWebUI"""
+        if is_full_context and "summary" in context:
+            # Full context mode - summarize all sections
+            return self._format_full_context_prompt(context)
+        
+        # Single job context mode (backward compatible)
         job = context.get("job", {})
         prompt_type = context.get("prompt_type", "analyze")
         
@@ -291,6 +310,80 @@ Match Score: {job.get('ai_match_score', 'N/A')}%
             base_prompt += "\n\nPlease analyze this opportunity and provide insights on:\n- How well this role matches my profile\n- Key skills and requirements\n- Potential red flags or concerns\n- Recommendations for next steps"
         
         return base_prompt
+    
+    def _format_full_context_prompt(self, context: Dict[str, Any]) -> str:
+        """Format full dataset context as a comprehensive prompt"""
+        summary = context.get("summary", {})
+        companies = context.get("companies", [])
+        jobs = context.get("jobs", [])
+        applications = context.get("applications", [])
+        tasks = context.get("tasks", [])
+        follow_ups = context.get("follow_ups", [])
+        documents = context.get("generated_documents", [])
+        crawl_history = context.get("crawl_history", [])
+        user_profile = context.get("user_profile", {})
+        
+        prompt = """# Complete Job Search Dataset Context
+
+## Summary Statistics
+"""
+        if summary:
+            prompt += f"- Total Jobs: {summary.get('total_jobs', 0)}\n"
+            prompt += f"- Recent Jobs (30 days): {summary.get('recent_jobs', 0)}\n"
+            prompt += f"- Recommended Jobs: {summary.get('recommended_jobs', 0)}\n"
+            prompt += f"- Total Applications: {summary.get('total_applications', 0)}\n"
+            prompt += f"- Pending Tasks: {summary.get('pending_tasks', 0)}\n"
+            prompt += f"- Active Companies: {summary.get('active_companies', 0)}\n"
+        
+        if user_profile:
+            prompt += "\n## User Profile\n"
+            if user_profile.get("skills"):
+                prompt += f"Skills: {', '.join(user_profile['skills'][:10])}\n"
+            if user_profile.get("preferences"):
+                prompt += f"Preferences: {user_profile['preferences']}\n"
+        
+        if companies:
+            prompt += f"\n## Active Companies ({len(companies)} shown)\n"
+            for c in companies[:10]:
+                prompt += f"- {c['name']} ({c['crawler_type']}) - {c['jobs_count']} jobs\n"
+        
+        if jobs:
+            prompt += f"\n## Recent Jobs ({len(jobs)} shown)\n"
+            for j in jobs[:15]:
+                prompt += f"- {j['title']} at {j['company']} (Score: {j.get('ai_match_score', 'N/A')}%, Status: {j['status']})\n"
+        
+        if applications:
+            prompt += f"\n## Applications ({len(applications)} shown)\n"
+            for a in applications[:10]:
+                prompt += f"- {a.get('job_title', 'N/A')} - Status: {a['status']}\n"
+        
+        if tasks:
+            prompt += f"\n## Pending Tasks ({len(tasks)} shown)\n"
+            for t in tasks[:10]:
+                prompt += f"- {t['title']} ({t['task_type']}) - Priority: {t['priority']}, Due: {t.get('due_date', 'N/A')}\n"
+        
+        if follow_ups:
+            prompt += f"\n## Upcoming Follow-ups ({len(follow_ups)} shown)\n"
+            for f in follow_ups[:10]:
+                prompt += f"- {f.get('job_title', 'N/A')} - Date: {f.get('follow_up_date', 'N/A')}\n"
+        
+        if documents:
+            prompt += f"\n## Generated Documents ({len(documents)} shown)\n"
+            for d in documents[:10]:
+                prompt += f"- {d['document_type']} for {d.get('job_title', 'N/A')} - Status: {d.get('review_status', 'pending')}\n"
+        
+        if crawl_history:
+            prompt += f"\n## Recent Crawl History ({len(crawl_history)} shown)\n"
+            for c in crawl_history[:10]:
+                prompt += f"- {c.get('company_name', 'N/A')} - {c['jobs_found']} jobs found, Status: {c['status']}\n"
+        
+        prompt += "\n\nBased on this complete dataset, help me understand:\n"
+        prompt += "- Overall job search progress and trends\n"
+        prompt += "- Recommended next actions\n"
+        prompt += "- Areas that need attention\n"
+        prompt += "- Insights about my job search strategy"
+        
+        return prompt
 
 
 # Singleton instance

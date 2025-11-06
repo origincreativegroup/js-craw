@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from typing import List, Dict, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -706,17 +706,40 @@ class CrawlerOrchestrator:
                     logger.warning(f"Job missing title, skipping: {job_data.get('external_id', 'Unknown')}")
                     continue
                 
-                # Check if job already exists (by external_id and company_id to handle duplicates across companies)
-                result = await db.execute(
-                    select(Job).where(
-                        Job.external_id == job_data['external_id'],
-                        Job.company_id == company.id
-                    )
+                # Enhanced deduplication check
+                from app.services.job_deduplication_service import JobDeduplicationService
+                dedup_service = JobDeduplicationService()
+                existing = await dedup_service.find_duplicate(
+                    db,
+                    job_data,
+                    company_id=company.id
                 )
-                existing = result.scalar_one_or_none()
 
                 if existing:
-                    logger.debug(f"Job already exists: {job_data['external_id']} for {company.name}")
+                    logger.debug(f"Job already exists: {job_data.get('external_id', 'N/A')} for {company.name} (duplicate detected)")
+                    # Update existing job if it's older and we have newer data
+                    if existing.discovered_at and job_data.get('posted_date'):
+                        # Normalize both datetimes to UTC-aware for comparison
+                        # LinkedIn crawler returns timezone-aware datetimes, discovered_at is naive
+                        posted_date = job_data['posted_date']
+                        discovered_at = existing.discovered_at
+                        
+                        # Convert naive datetime to UTC-aware if needed
+                        if discovered_at.tzinfo is None:
+                            discovered_at = discovered_at.replace(tzinfo=timezone.utc)
+                        
+                        # Ensure posted_date is also UTC-aware
+                        if posted_date.tzinfo is None:
+                            posted_date = posted_date.replace(tzinfo=timezone.utc)
+                        
+                        if posted_date > discovered_at:
+                            # Update with newer information
+                            existing.description = job_data.get('description', existing.description)
+                            existing.posted_date = job_data.get('posted_date')
+                            existing.url = job_data.get('url', existing.url)
+                            existing.source_url = job_data.get('source_url', existing.source_url)
+                            await db.commit()
+                            logger.debug(f"Updated existing job {existing.id} with newer data")
                     continue
 
                 # Create new job
