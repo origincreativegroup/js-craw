@@ -2,8 +2,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import JobPipeline from './pages/JobPipeline';
-import Jobs from './pages/Jobs';
-import Tasks from './pages/Tasks';
 import Companies from './pages/Companies';
 import CareerHub from './pages/CareerHub';
 import AutomationControl from './pages/AutomationControl';

@@ -19,7 +19,7 @@ const Layout = ({ children }: LayoutProps) => {
   const navItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/pipeline', icon: Briefcase, label: 'Pipeline' },
-    { path: '/career-hub', icon: BriefcaseIcon, label: 'Career Hub' },
+    { path: '/career-hub', icon: Briefcase, label: 'Career Hub' },
     { path: '/companies', icon: Building2, label: 'Companies' },
     { path: '/automation-control', icon: Zap, label: 'Automation Control' },
   ];

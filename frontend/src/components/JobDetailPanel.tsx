@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, ChevronDown, ChevronUp, Sparkles, FileText, CheckSquare, Calendar, Clock, Download, Edit, ExternalLink } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, Sparkles, FileText, CheckSquare, Calendar, Clock, ExternalLink } from 'lucide-react';
 import Card from './Card';
 import Button from './Button';
 import JobFileManager from './JobFileManager';
@@ -34,7 +34,7 @@ const JobDetailPanel: React.FC<JobDetailPanelProps> = ({ job, onClose, onStageCh
     // Subscribe to job changes
     const unsubscribe = jobSync.subscribeToJob(job.id, (updatedJob) => {
       // Update context if job data changed
-      setContext((prevContext) => {
+      setContext((prevContext: any) => {
         if (prevContext) {
           return { ...prevContext, job: updatedJob };
         }

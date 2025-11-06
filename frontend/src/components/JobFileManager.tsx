@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, FileText, Sparkles, History, Eye, File } from 'lucide-react';
+import { Download, FileText, Sparkles, History, Eye } from 'lucide-react';
 import Card from './Card';
 import Button from './Button';
 import { getJobDocuments, generateDocuments } from '../services/api';
@@ -196,7 +196,7 @@ const JobFileManager: React.FC<JobFileManagerProps> = ({ jobId, onRefresh }) => 
                       <FileText size={20} />
                       <div className="document-info">
                         <div className="document-name">
-                          {doc.document_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          {doc.document_type.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
                           {doc.version > 1 && <span className="version-badge">v{doc.version}</span>}
                         </div>
                         <div className="document-meta">
