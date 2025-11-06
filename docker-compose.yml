@@ -73,7 +73,7 @@ services:
       selenium-chrome:
         condition: service_healthy
       puppeteer-service:
-        condition: service_healthy
+        condition: service_started
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/job_crawler
       - REDIS_URL=redis://redis:6379/0
