@@ -24,6 +24,7 @@ import Button from '../components/Button';
 import {
   getCrawlStatus,
   updateSchedulerInterval,
+  updateDiscoveryInterval,
   getDiscoveryStatus,
   runDiscovery,
   getPendingCompanies,
@@ -62,6 +63,7 @@ const AutomationControl = () => {
   const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
   const [pendingCompanies, setPendingCompanies] = useState<PendingCompany[]>([]);
   const [discovering, setDiscovering] = useState(false);
+  const [discoveryInterval, setDiscoveryInterval] = useState<string>('');
   const [processing, setProcessing] = useState<number | null>(null);
   
   // Settings state
@@ -284,6 +286,22 @@ const AutomationControl = () => {
   };
 
   // Discovery Controls
+  const handleUpdateDiscoveryInterval = async () => {
+    const interval = parseInt(discoveryInterval);
+    if (isNaN(interval) || interval < 1) {
+      alert('Please enter a valid interval (minimum 1 hour)');
+      return;
+    }
+    try {
+      await updateDiscoveryInterval(interval);
+      await loadDiscoveryData();
+      addActivity('discovery', `Discovery interval updated to ${interval} hours`, 'success');
+    } catch (error: any) {
+      console.error('Error updating discovery interval:', error);
+      alert(error.message || 'Failed to update discovery interval.');
+    }
+  };
+
   const handleRunDiscovery = async () => {
     setDiscovering(true);
     try {
@@ -793,10 +811,38 @@ const AutomationControl = () => {
                 </div>
 
                 {discoveryStatus?.discovery_enabled && (
-                  <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                    <Clock size={14} style={{ display: 'inline', marginRight: '4px' }} />
-                    Runs automatically every {discoveryStatus.discovery_interval_hours} hours
-                  </p>
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                      <Clock size={14} style={{ color: 'var(--text-muted)' }} />
+                      <span style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
+                        Runs automatically every {discoveryStatus.discovery_interval_hours} hours
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                      <input
+                        type="number"
+                        min="1"
+                        max="168"
+                        value={discoveryInterval}
+                        onChange={(e) => setDiscoveryInterval(e.target.value)}
+                        placeholder="Hours"
+                        style={{
+                          width: '80px',
+                          padding: '6px 8px',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '4px',
+                          fontSize: '14px'
+                        }}
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleUpdateDiscoveryInterval}
+                      >
+                        Update Interval
+                      </Button>
+                    </div>
+                  </div>
                 )}
 
                 <div className="discovery-actions">

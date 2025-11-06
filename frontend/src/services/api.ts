@@ -200,6 +200,10 @@ export const updateSchedulerInterval = async (intervalMinutes: number): Promise<
   await api.patch('/automation/scheduler', { interval_minutes: intervalMinutes });
 };
 
+export const updateDiscoveryInterval = async (intervalHours: number): Promise<void> => {
+  await api.patch('/automation/discovery-interval', { interval_hours: intervalHours });
+};
+
 export const getSchedulerStatus = async (): Promise<{
   status: string;
   next_run?: string;
