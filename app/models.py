@@ -361,7 +361,7 @@ class JobActivity(Base):
     # Activity details
     activity_type = Column(String(50), nullable=False, index=True)  # created, analyzed, queued, applied, status_changed, document_generated, etc.
     activity_description = Column(Text, nullable=True)  # Human-readable description
-    metadata = Column(JSON, nullable=True)  # Additional context (old_value, new_value, etc.)
+    activity_metadata = Column(JSON, nullable=True)  # Additional context (old_value, new_value, etc.)
     
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, index=True)

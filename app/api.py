@@ -1330,7 +1330,7 @@ async def update_pipeline_stage(
             job_id=job_id,
             activity_type="pipeline_stage_changed",
             activity_description=f"Job moved from {old_stage} to {update.stage}",
-            metadata={"old_stage": old_stage, "new_stage": update.stage},
+            activity_metadata={"old_stage": old_stage, "new_stage": update.stage},
             created_by="user"
         )
         db.add(activity)
