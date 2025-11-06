@@ -75,11 +75,7 @@ const Automation = () => {
   const handleJobCrawlerPause = async () => {
     setJobCrawlerAction('pause');
     try {
-      const response = await fetch('/api/automation/pause', { method: 'POST' });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to pause job crawler (${response.status})`);
-      }
+      await pauseScheduler();
       setTimeout(() => loadData(), 1000);
     } catch (error: any) {
       console.error('Error pausing job crawler:', error);
@@ -92,11 +88,7 @@ const Automation = () => {
   const handleJobCrawlerResume = async () => {
     setJobCrawlerAction('resume');
     try {
-      const response = await fetch('/api/automation/resume', { method: 'POST' });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to resume job crawler (${response.status})`);
-      }
+      await resumeScheduler();
       setTimeout(() => loadData(), 1000);
     } catch (error: any) {
       console.error('Error resuming job crawler:', error);
@@ -109,11 +101,7 @@ const Automation = () => {
   const handleJobCrawlerStop = async () => {
     setJobCrawlerAction('stop');
     try {
-      const response = await fetch('/api/crawl/cancel', { method: 'POST' });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to stop job crawler (${response.status})`);
-      }
+      await cancelCrawl();
       setTimeout(() => loadData(), 1000);
     } catch (error: any) {
       console.error('Error stopping job crawler:', error);
