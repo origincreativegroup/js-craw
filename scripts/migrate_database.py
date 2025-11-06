@@ -187,6 +187,25 @@ async def run_migration():
         else:
             print("  ⊘ crawl_fallbacks table already exists")
         
+        # Check if archived_at column exists in jobs table
+        result = await conn.execute(
+            text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'jobs' 
+                AND column_name = 'archived_at'
+            """)
+        )
+        archived_at_exists = result.scalar() is not None
+        
+        if not archived_at_exists:
+            print("  Adding archived_at column to jobs table...")
+            await conn.execute(text("ALTER TABLE jobs ADD COLUMN archived_at TIMESTAMP"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_jobs_archived_at ON jobs(archived_at)"))
+            print("  ✓ archived_at column added")
+        else:
+            print("  ⊘ archived_at column already exists in jobs table")
+        
         # Check which new Company columns exist
         result = await conn.execute(
             text("""
