@@ -1082,7 +1082,7 @@ async def get_jobs(
             "ai_cons": j.ai_cons,
             "ai_keywords_matched": j.ai_keywords_matched,
             "posted_date": j.posted_date.isoformat() if j.posted_date else None,
-            "discovered_at": j.discovered_at.isoformat(),
+            "discovered_at": j.discovered_at.isoformat() if j.discovered_at else None,
         }
         for j in jobs
     ]
@@ -1746,20 +1746,31 @@ async def update_scheduler(
         if update.interval_minutes is None:
             raise HTTPException(status_code=400, detail="interval_minutes is required")
         
-        if update.interval_minutes < 30:
-            raise HTTPException(status_code=400, detail="Interval must be at least 30 minutes")
+        if update.interval_minutes < 1:
+            raise HTTPException(status_code=400, detail="Interval must be at least 1 minute")
         
         if update.interval_minutes > 1440:
             raise HTTPException(status_code=400, detail="Interval must be at most 1440 minutes (once per day)")
         
-        # Update the job trigger
+        # Update the job trigger for company crawls
         scheduler.modify_job(
             "crawl_all_companies",
             trigger=IntervalTrigger(minutes=update.interval_minutes)
         )
         
+        # Also update search crawls to match (or keep separate if needed)
+        # For now, update both to keep them in sync
+        try:
+            scheduler.modify_job(
+                "run_all_searches",
+                trigger=IntervalTrigger(minutes=update.interval_minutes)
+            )
+        except Exception as e:
+            logger.warning(f"Could not update search crawl interval: {e}")
+        
         # Update settings (in-memory only, doesn't persist to .env)
         settings.CRAWL_INTERVAL_MINUTES = update.interval_minutes
+        settings.SEARCH_CRAWL_INTERVAL_MINUTES = update.interval_minutes
         
         return {
             "message": "Scheduler interval updated",
@@ -1769,6 +1780,49 @@ async def update_scheduler(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating scheduler: {str(e)}")
+
+
+class DiscoveryIntervalUpdate(BaseModel):
+    interval_hours: Optional[int] = None
+
+
+@router.patch("/automation/discovery-interval")
+async def update_discovery_interval(
+    request: Request,
+    update: DiscoveryIntervalUpdate
+):
+    """Update company discovery interval"""
+    try:
+        scheduler = request.app.state.scheduler
+        from app.config import settings
+        from apscheduler.triggers.interval import IntervalTrigger
+        
+        if update.interval_hours is None:
+            raise HTTPException(status_code=400, detail="interval_hours is required")
+        
+        if update.interval_hours < 1:
+            raise HTTPException(status_code=400, detail="Interval must be at least 1 hour")
+        
+        if update.interval_hours > 168:
+            raise HTTPException(status_code=400, detail="Interval must be at most 168 hours (once per week)")
+        
+        # Update the job trigger
+        scheduler.modify_job(
+            "company_discovery",
+            trigger=IntervalTrigger(hours=update.interval_hours)
+        )
+        
+        # Update settings (in-memory only, doesn't persist to .env)
+        settings.COMPANY_DISCOVERY_INTERVAL_HOURS = update.interval_hours
+        
+        return {
+            "message": "Company discovery interval updated",
+            "interval_hours": update.interval_hours
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating discovery interval: {str(e)}")
 
 
 @router.post("/automation/pause")
@@ -3454,11 +3508,12 @@ async def update_settings(request: Request, update: SettingsUpdate):
         
         # Crawl scheduling settings
         if "crawl_interval_minutes" in updates:
-            if updates["crawl_interval_minutes"] < 30:
-                raise HTTPException(status_code=400, detail="Crawl interval must be at least 30 minutes")
+            if updates["crawl_interval_minutes"] < 1:
+                raise HTTPException(status_code=400, detail="Crawl interval must be at least 1 minute")
             if updates["crawl_interval_minutes"] > 1440:
                 raise HTTPException(status_code=400, detail="Crawl interval must be at most 1440 minutes (once per day)")
             settings.CRAWL_INTERVAL_MINUTES = updates["crawl_interval_minutes"]
+            settings.SEARCH_CRAWL_INTERVAL_MINUTES = updates["crawl_interval_minutes"]
             # Update scheduler if it exists
             scheduler = getattr(request.app.state, 'scheduler', None)
             if scheduler:
@@ -3467,6 +3522,10 @@ async def update_settings(request: Request, update: SettingsUpdate):
                     scheduler.modify_job(
                         "crawl_all_companies",
                         trigger=IntervalTrigger(minutes=settings.CRAWL_INTERVAL_MINUTES)
+                    )
+                    scheduler.modify_job(
+                        "run_all_searches",
+                        trigger=IntervalTrigger(minutes=settings.SEARCH_CRAWL_INTERVAL_MINUTES)
                     )
                 except Exception as e:
                     logger.warning(f"Could not update scheduler interval: {e}")
