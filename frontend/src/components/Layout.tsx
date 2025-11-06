@@ -6,10 +6,8 @@ import {
   CheckSquare, 
   Calendar, 
   Building2, 
-  Settings,
   Sparkles,
   Compass,
-  Search,
   Briefcase as BriefcaseIcon,
   Zap
 } from 'lucide-react';

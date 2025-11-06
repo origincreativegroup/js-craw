@@ -334,12 +334,14 @@ const CareerCopilot = () => {
 
       <div className="career-copilot-grid">
         <div className="document-sidebar">
-          <Card 
-            className={`document-upload ${dragActive ? 'drag-active' : ''}`}
+          <div
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
             onDrop={handleDrop}
+          >
+          <Card 
+            className={`document-upload ${dragActive ? 'drag-active' : ''}`}
           >
             <div className="card-header">
               <div className="card-header-content">
@@ -432,6 +434,7 @@ const CareerCopilot = () => {
               </div>
             )}
           </Card>
+          </div>
 
           <div className="document-list">
             {documentsLoading && <div>Loading documents...</div>}

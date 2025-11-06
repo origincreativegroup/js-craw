@@ -9,7 +9,6 @@ import {
   ArrowRight,
   Clock,
   Zap,
-  Activity,
   Settings,
   Search,
   Building2,

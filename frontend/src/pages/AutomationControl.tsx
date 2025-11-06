@@ -6,7 +6,6 @@ import {
   Clock,
   Building2,
   CheckCircle,
-  TrendingUp,
   Search,
   Briefcase,
   Settings,
@@ -17,7 +16,6 @@ import {
   RefreshCw,
   AlertCircle,
   XCircle,
-  Globe,
   BarChart3,
   Zap,
 } from 'lucide-react';
@@ -25,8 +23,6 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import {
   getCrawlStatus,
-  triggerCrawl,
-  cancelCrawl,
   updateSchedulerInterval,
   getDiscoveryStatus,
   runDiscovery,
