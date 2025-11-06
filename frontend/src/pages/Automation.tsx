@@ -58,11 +58,7 @@ const Automation = () => {
   const handleJobCrawlerStart = async () => {
     setJobCrawlerAction('start');
     try {
-      const response = await fetch('/api/crawl/run?crawl_type=all', { method: 'POST' });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to start job crawler (${response.status})`);
-      }
+      await triggerCrawl('all');
       setTimeout(() => loadData(), 1000);
     } catch (error: any) {
       console.error('Error starting job crawler:', error);
