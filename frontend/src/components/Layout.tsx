@@ -22,11 +22,8 @@ const Layout = ({ children }: LayoutProps) => {
 
   const navItems = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { path: '/discovery', icon: Compass, label: 'Discover' },
-    { path: '/jobs', icon: Briefcase, label: 'Jobs' },
+    { path: '/pipeline', icon: Briefcase, label: 'Pipeline' },
     { path: '/career-hub', icon: BriefcaseIcon, label: 'Career Hub' },
-    { path: '/tasks', icon: CheckSquare, label: 'Tasks' },
-    { path: '/follow-ups', icon: Calendar, label: 'Follow-ups' },
     { path: '/companies', icon: Building2, label: 'Companies' },
     { path: '/automation-control', icon: Zap, label: 'Automation Control' },
   ];
@@ -42,6 +39,13 @@ const Layout = ({ children }: LayoutProps) => {
     location.pathname === '/automation' || 
     location.pathname === '/company-discovery' || 
     location.pathname === '/settings';
+
+  // Check if current path matches pipeline or old workflow routes
+  const isPipelineActive = location.pathname === '/pipeline' ||
+    location.pathname === '/jobs' ||
+    location.pathname === '/tasks' ||
+    location.pathname === '/follow-ups' ||
+    location.pathname === '/discovery';
 
   return (
     <div className="layout">
@@ -61,6 +65,8 @@ const Layout = ({ children }: LayoutProps) => {
               isActive = isCareerHubActive;
             } else if (item.path === '/automation-control') {
               isActive = isAutomationControlActive;
+            } else if (item.path === '/pipeline') {
+              isActive = isPipelineActive;
             } else {
               isActive = location.pathname === item.path;
             }

@@ -19,6 +19,15 @@ export interface Job {
   notes?: string;
   application?: Application;
   generated_documents?: GeneratedDocument[];
+  pipeline_stage?: string;
+  ai_content?: {
+    summary?: string;
+    pros?: string[];
+    cons?: string[];
+    keywords_matched?: string[];
+    match_score?: number;
+    recommended?: boolean;
+  };
 }
 
 export interface SuggestedStep {
@@ -334,5 +343,84 @@ export interface UserProfileUpdate {
     [key: string]: any;
   };
   preferences?: UserProfilePreferences;
+}
+
+// Unified automation and companies types
+export interface UnifiedCompany extends Company {
+  last_crawl_at?: string;
+  automation: {
+    total_crawls_30d: number;
+    successful_crawls_30d: number;
+    success_rate?: number;
+    health_status: 'healthy' | 'warning' | 'critical' | 'inactive' | 'unknown';
+    needs_attention: boolean;
+  };
+}
+
+export interface UnifiedStatus {
+  automation: {
+    scheduler: {
+      status: string;
+      next_run?: string;
+      interval_minutes?: number;
+      is_paused: boolean;
+      job_id?: string;
+      job_name?: string;
+      error?: string;
+    };
+    crawler: {
+      is_running: boolean;
+      running_count: number;
+      queue_length: number;
+      current_company?: string;
+      progress: {
+        current: number;
+        total: number;
+      };
+      eta_seconds?: number;
+      run_type?: string;
+      recent_logs: CrawlLog[];
+      crawler_health: Record<string, CrawlerHealth>;
+      error?: string;
+    };
+    discovery: DiscoveryStatus & {
+      error?: string;
+    };
+  };
+  companies: {
+    total_companies: number;
+    active_companies: number;
+    inactive_companies: number;
+    needs_attention: number;
+    unchecked_viability: number;
+    average_viability_score?: number;
+    error?: string;
+  };
+  recent_activity: {
+    recent_crawls: Array<{
+      id: number;
+      company_id?: number;
+      status: string;
+      started_at?: string;
+      jobs_found: number;
+      new_jobs: number;
+    }>;
+    recent_discoveries: Array<{
+      id: number;
+      name: string;
+      discovery_source: string;
+      confidence_score: number;
+      created_at: string;
+    }>;
+    error?: string;
+  };
+  metrics: {
+    crawl_success_rate_30d?: number;
+    total_crawls_30d: number;
+    successful_crawls_30d: number;
+    average_crawl_duration_seconds?: number;
+    error?: string;
+  };
+  timestamp: string;
 }
 

@@ -134,6 +134,11 @@ class Job(Base):
     is_new = Column(Boolean, default=True, index=True)
     archived_at = Column(DateTime, nullable=True, index=True)  # When job was archived (90+ days old)
 
+    # Pipeline workflow
+    pipeline_stage = Column(String(50), default="discover", index=True)  # discover, review, prepare, apply, follow_up, archive
+    ai_content = Column(JSON, nullable=True)  # Consolidated AI analysis (summary, pros, cons, keywords, fit analysis)
+    activity_log = Column(JSON, nullable=True)  # Timeline of actions on this job
+
     discovered_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -145,6 +150,7 @@ class Job(Base):
     tasks = relationship("Task", back_populates="job")
     applications = relationship("Application", back_populates="job")
     feedback = relationship("JobFeedback", back_populates="job")
+    activities = relationship("JobActivity", back_populates="job", cascade="all, delete-orphan")
 
 
 class FollowUp(Base):
@@ -236,8 +242,14 @@ class GeneratedDocument(Base):
     review_notes = Column(Text, nullable=True)  # User notes from review
     edited_content = Column(Text, nullable=True)  # User-edited version
     
+    # Version tracking
+    version = Column(Integer, default=1, index=True)  # Version number for this document
+    parent_version_id = Column(Integer, ForeignKey("generated_documents.id"), nullable=True)  # Link to previous version
+    is_current = Column(Boolean, default=True, index=True)  # Is this the current version?
+    
     # Relationships
     job = relationship("Job", back_populates="generated_documents")
+    parent_version = relationship("GeneratedDocument", remote_side=[id], backref="child_versions")
 
 
 class CrawlFallback(Base):
@@ -337,3 +349,23 @@ class JobFeedback(Base):
     
     # Relationships
     job = relationship("Job", back_populates="feedback")
+
+
+class JobActivity(Base):
+    """Track all actions on a job for activity timeline"""
+    __tablename__ = "job_activities"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    
+    # Activity details
+    activity_type = Column(String(50), nullable=False, index=True)  # created, analyzed, queued, applied, status_changed, document_generated, etc.
+    activity_description = Column(Text, nullable=True)  # Human-readable description
+    metadata = Column(JSON, nullable=True)  # Additional context (old_value, new_value, etc.)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_by = Column(String(50), nullable=True)  # user, ai, system
+    
+    # Relationships
+    job = relationship("Job", back_populates="activities")

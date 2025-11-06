@@ -17,27 +17,16 @@ import {
 import Card from '../components/Card';
 import { 
   getStats, 
-  getCrawlStatus, 
   getJobs, 
-  getSchedulerStatus,
-  getDiscoveryStatus
+  getUnifiedStatus
 } from '../services/api';
-import type { Stats, CrawlStatus, Job, DiscoveryStatus, CrawlerHealth } from '../types';
+import type { Stats, Job, UnifiedStatus, CrawlerHealth } from '../types';
 import { format, parseISO } from 'date-fns';
 import './Dashboard.css';
 
-interface SchedulerStatus {
-  status: string;
-  next_run?: string;
-  interval_minutes: number;
-  is_paused: boolean;
-}
-
 const Dashboard = () => {
   const [stats, setStats] = useState<Stats | null>(null);
-  const [crawlStatus, setCrawlStatus] = useState<CrawlStatus | null>(null);
-  const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null);
-  const [_discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
+  const [unifiedStatus, setUnifiedStatus] = useState<UnifiedStatus | null>(null);
   const [topJobs, setTopJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -46,17 +35,13 @@ const Dashboard = () => {
 
   const loadAllData = async () => {
     try {
-      const [statsData, crawlData, schedulerData, jobsData, discoveryData] = await Promise.all([
+      const [statsData, unifiedData, jobsData] = await Promise.all([
         getStats(),
-        getCrawlStatus(),
-        getSchedulerStatus().catch(() => null),
+        getUnifiedStatus(10),
         getJobs({ limit: 5, status: 'new' }),
-        getDiscoveryStatus().catch(() => null),
       ]);
       setStats(statsData);
-      setCrawlStatus(crawlData);
-      setSchedulerStatus(schedulerData);
-      setDiscoveryStatus(discoveryData);
+      setUnifiedStatus(unifiedData);
       setTopJobs(jobsData);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -86,14 +71,15 @@ const Dashboard = () => {
 
   // Adaptive fast polling when crawler is active
   useEffect(() => {
-    if (crawlStatus?.is_running) {
+    const isRunning = unifiedStatus?.automation.crawler.is_running || false;
+    if (isRunning) {
       // Clear any existing fast polling
       if (fastPollingRef.current) {
         clearInterval(fastPollingRef.current);
       }
-      // Start fast polling (every 3s) for crawl status only
+      // Start fast polling (every 3s) for unified status
       fastPollingRef.current = setInterval(() => {
-        getCrawlStatus().then(setCrawlStatus).catch(console.error);
+        getUnifiedStatus(10).then(setUnifiedStatus).catch(console.error);
       }, 3000);
     } else {
       // Stop fast polling when crawler is idle
@@ -108,7 +94,7 @@ const Dashboard = () => {
         clearInterval(fastPollingRef.current);
       }
     };
-  }, [crawlStatus?.is_running]);
+  }, [unifiedStatus?.automation.crawler.is_running]);
 
   if (loading) {
     return <div className="loading">Loading dashboard...</div>;
@@ -118,9 +104,12 @@ const Dashboard = () => {
   const newJobs = statusCounts['new'] || 0;
   const applied = statusCounts['applied'] || 0;
   
-  const isCrawlerRunning = crawlStatus?.is_running || false;
-  const isPaused = schedulerStatus?.is_paused || false;
-  const crawlerHealth = crawlStatus?.crawler_health || {};
+  const isCrawlerRunning = unifiedStatus?.automation.crawler.is_running || false;
+  const isPaused = unifiedStatus?.automation.scheduler.is_paused || false;
+  const crawlerHealth = unifiedStatus?.automation.crawler.crawler_health || {};
+  const crawler = unifiedStatus?.automation.crawler;
+  const scheduler = unifiedStatus?.automation.scheduler;
+  const companies = unifiedStatus?.companies;
   
   const getHealthStatus = (health: CrawlerHealth | undefined): 'healthy' | 'warning' | 'error' => {
     if (!health || health.total_runs === 0) return 'warning';
@@ -232,10 +221,10 @@ const Dashboard = () => {
                   <h3 className="card-title">Job Crawler</h3>
                   <p className="card-subtitle">
                     {isCrawlerRunning 
-                      ? (crawlStatus?.run_type === 'all_companies' 
+                      ? (crawler?.run_type === 'all_companies' 
                           ? 'Universal Company Crawl' 
                           : 'Search-Based Crawl')
-                      : 'Monitoring active companies'}
+                      : `Monitoring ${companies?.active_companies || 0} active companies`}
                   </p>
                 </div>
               </div>
@@ -244,43 +233,43 @@ const Dashboard = () => {
               </div>
             </div>
             <div className="automation-info">
-              {isCrawlerRunning && crawlStatus?.progress ? (
+              {isCrawlerRunning && crawler?.progress ? (
                 <>
                   <div className="progress-section">
                     <div className="progress-text">
-                      {crawlStatus.progress.current} / {crawlStatus.progress.total} companies
+                      {crawler.progress.current} / {crawler.progress.total} companies
                     </div>
                     <div className="progress-bar">
                       <div
                         className="progress-fill"
                         style={{
-                          width: `${Math.min(100, (crawlStatus.progress.current / crawlStatus.progress.total) * 100)}%`,
+                          width: `${Math.min(100, (crawler.progress.current / crawler.progress.total) * 100)}%`,
                         }}
                       />
                     </div>
                   </div>
-                  {crawlStatus.current_company && (
+                  {crawler.current_company && (
                     <div className="current-item">
-                      Currently: <strong>{crawlStatus.current_company}</strong>
+                      Currently: <strong>{crawler.current_company}</strong>
                     </div>
                   )}
-                  {crawlStatus.eta_seconds && (
+                  {crawler.eta_seconds && (
                     <div className="eta-info">
-                      ETA: {Math.round(crawlStatus.eta_seconds / 60)} minutes
+                      ETA: {Math.round(crawler.eta_seconds / 60)} minutes
                     </div>
                   )}
-                  {crawlStatus.queue_length > 0 && (
+                  {crawler.queue_length > 0 && (
                     <div className="queue-info">
-                      Queue: {crawlStatus.queue_length} companies
+                      Queue: {crawler.queue_length} companies
                     </div>
                   )}
                 </>
               ) : (
                 <div className="idle-info">
-                  <p>Monitoring {crawlStatus?.active_companies || 0} active companies</p>
-                  {schedulerStatus && !isPaused && (
+                  <p>Monitoring {companies?.active_companies || 0} active companies</p>
+                  {scheduler && !isPaused && scheduler.interval_minutes && (
                     <p className="next-run-info">
-                      Next crawl in {schedulerStatus.interval_minutes} minutes
+                      Next crawl in {scheduler.interval_minutes} minutes
                     </p>
                   )}
                 </div>
@@ -303,21 +292,23 @@ const Dashboard = () => {
               </div>
             </div>
             <div className="automation-info">
-              {schedulerStatus ? (
+              {scheduler ? (
                 <>
-                  <div className="scheduler-detail">
-                    <span className="detail-label">Interval:</span>
-                    <span className="detail-value">{schedulerStatus.interval_minutes} minutes</span>
-                  </div>
-                  {schedulerStatus.next_run && (
+                  {scheduler.interval_minutes && (
+                    <div className="scheduler-detail">
+                      <span className="detail-label">Interval:</span>
+                      <span className="detail-value">{scheduler.interval_minutes} minutes</span>
+                    </div>
+                  )}
+                  {scheduler.next_run && (
                     <div className="scheduler-detail">
                       <span className="detail-label">Next Run:</span>
-                      <span className="detail-value">{formatNextRun(schedulerStatus.next_run)}</span>
+                      <span className="detail-value">{formatNextRun(scheduler.next_run)}</span>
                     </div>
                   )}
                   <div className="scheduler-detail">
                     <span className="detail-label">Status:</span>
-                    <span className="detail-value">{schedulerStatus.status}</span>
+                    <span className="detail-value">{scheduler.status}</span>
                   </div>
                 </>
               ) : (
@@ -328,6 +319,39 @@ const Dashboard = () => {
             </div>
           </Card>
         </div>
+
+        {/* Company Overview Card */}
+        {companies && (
+          <Card className="automation-card">
+            <div className="card-header">
+              <div className="card-header-content">
+                <Building2 size={24} className="card-icon" />
+                <div>
+                  <h3 className="card-title">Companies</h3>
+                  <p className="card-subtitle">Active company monitoring</p>
+                </div>
+              </div>
+            </div>
+            <div className="automation-info">
+              <div className="scheduler-detail">
+                <span className="detail-label">Active:</span>
+                <span className="detail-value">{companies.active_companies} / {companies.total_companies}</span>
+              </div>
+              {companies.needs_attention > 0 && (
+                <div className="scheduler-detail">
+                  <span className="detail-label">Needs Attention:</span>
+                  <span className="detail-value warning">{companies.needs_attention}</span>
+                </div>
+              )}
+              {companies.average_viability_score !== null && companies.average_viability_score !== undefined && (
+                <div className="scheduler-detail">
+                  <span className="detail-label">Avg Viability:</span>
+                  <span className="detail-value">{companies.average_viability_score.toFixed(1)}%</span>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Crawler Health Metrics */}
         {Object.keys(crawlerHealth).length > 0 && (
@@ -405,13 +429,13 @@ const Dashboard = () => {
             <ArrowRight size={16} className="quick-action-arrow" />
           </Link>
           
-          <Link to="/jobs" className="quick-action-item">
+          <Link to="/pipeline" className="quick-action-item">
             <div className="quick-action-icon jobs">
               <Search size={24} />
             </div>
             <div className="quick-action-content">
-              <h4 className="quick-action-title">Browse Jobs</h4>
-              <p className="quick-action-desc">View all discovered jobs</p>
+              <h4 className="quick-action-title">Job Pipeline</h4>
+              <p className="quick-action-desc">Manage your job search workflow</p>
             </div>
             <ArrowRight size={16} className="quick-action-arrow" />
           </Link>
@@ -433,7 +457,7 @@ const Dashboard = () => {
         <Card className="top-jobs-card">
           <div className="card-header">
             <h2 className="card-title">Top AI-Matched Jobs</h2>
-            <Link to="/jobs" className="view-all-link">
+            <Link to="/pipeline" className="view-all-link">
               View All <ArrowRight size={16} />
             </Link>
           </div>
@@ -442,7 +466,7 @@ const Dashboard = () => {
               <div className="empty-state">No jobs found</div>
             ) : (
               topJobs.map((job) => (
-                <Link key={job.id} to={`/jobs?job=${job.id}`} className="job-item">
+                <Link key={job.id} to={`/pipeline`} className="job-item">
                   <div className="job-item-header">
                     <h3 className="job-title">{job.title}</h3>
                     {job.ai_match_score && (

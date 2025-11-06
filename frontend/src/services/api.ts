@@ -22,6 +22,8 @@ import type {
   JobFitPayload,
   TailoredDocumentsPayload,
   TailoredDocumentsResponse,
+  UnifiedStatus,
+  UnifiedCompany,
 } from '../types';
 
 const API_BASE = '/api';
@@ -483,6 +485,44 @@ export const createUserProfile = async (data: UserProfileUpdate): Promise<UserPr
 
 export const updateUserProfile = async (data: UserProfileUpdate): Promise<UserProfile> => {
   const response = await api.patch('/user-profile', data);
+  return response.data;
+};
+
+// Unified automation and companies endpoints
+export const getUnifiedStatus = async (limitLogs: number = 10): Promise<UnifiedStatus> => {
+  const response = await api.get('/unified/status', {
+    params: { limit_logs: limitLogs }
+  });
+  return response.data;
+};
+
+export const getUnifiedCompanies = async (activeOnly: boolean = false): Promise<UnifiedCompany[]> => {
+  const response = await api.get('/unified/companies', {
+    params: { active_only: activeOnly }
+  });
+  return response.data;
+};
+
+// Pipeline endpoints
+export const getJobsPipeline = async (stage?: string, filterType?: string): Promise<Record<string, Job[]>> => {
+  const params: any = {};
+  if (stage) params.stage = stage;
+  if (filterType) params.filter_type = filterType;
+  const response = await api.get('/jobs/pipeline', { params });
+  return response.data;
+};
+
+export const updatePipelineStage = async (jobId: number, stage: string): Promise<void> => {
+  await api.patch(`/jobs/${jobId}/pipeline-stage`, { stage });
+};
+
+export const getJobContext = async (jobId: number): Promise<any> => {
+  const response = await api.get(`/jobs/${jobId}/context`);
+  return response.data;
+};
+
+export const getJobDocuments = async (jobId: number): Promise<any> => {
+  const response = await api.get(`/documents/job/${jobId}`);
   return response.data;
 };
 

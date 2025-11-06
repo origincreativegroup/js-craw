@@ -21,6 +21,7 @@ from app.models import (
     Application,
     GeneratedDocument,
     UserDocument,
+    JobActivity,
 )
 from app.utils.crypto import encrypt_password
 from app.crawler.orchestrator import CrawlerOrchestrator
@@ -33,6 +34,7 @@ from app.services.document_library import (
     DocumentIngestionError,
     summarize_documents,
 )
+from app.services.document_service import DocumentService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -152,6 +154,10 @@ class ApplicationUpdate(BaseModel):
 class JobAction(BaseModel):
     action: str  # queue_application, mark_priority, mark_favorite
     metadata: Optional[dict] = None
+
+
+class PipelineStageUpdate(BaseModel):
+    stage: str
 
 
 class DocumentGenerate(BaseModel):
@@ -1227,6 +1233,249 @@ async def update_job(
     return {"message": "Job updated"}
 
 
+# Pipeline endpoints
+@router.get("/jobs/pipeline")
+async def get_jobs_pipeline(
+    stage: Optional[str] = None,
+    filter_type: Optional[str] = Query(None, description="Filter: 'high_match', 'recently_found', 'needs_action'"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get jobs organized by pipeline stage"""
+    try:
+        query = select(Job)
+        
+        # Filter by stage if provided
+        if stage:
+            query = query.where(Job.pipeline_stage == stage)
+        
+        # Apply additional filters
+        if filter_type == "high_match":
+            query = query.where(Job.ai_match_score >= 75)
+        elif filter_type == "recently_found":
+            query = query.where(Job.is_new == True)
+        elif filter_type == "needs_action":
+            # Jobs with pending tasks or upcoming follow-ups
+            from sqlalchemy import or_
+            query = query.where(
+                or_(
+                    Job.pipeline_stage.in_(["prepare", "apply", "follow_up"]),
+                    Job.status == "applied"
+                )
+            )
+        
+        query = query.order_by(desc(Job.discovered_at))
+        result = await db.execute(query)
+        jobs = result.scalars().all()
+        
+        # Organize by stage
+        jobs_by_stage = {
+            "discover": [],
+            "review": [],
+            "prepare": [],
+            "apply": [],
+            "follow_up": [],
+            "archive": []
+        }
+        
+        for job in jobs:
+            stage_key = job.pipeline_stage or "discover"
+            if stage_key not in jobs_by_stage:
+                stage_key = "discover"
+            jobs_by_stage[stage_key].append({
+                "id": job.id,
+                "title": job.title,
+                "company": job.company,
+                "location": job.location,
+                "url": job.url,
+                "status": job.status,
+                "pipeline_stage": job.pipeline_stage or "discover",
+                "ai_match_score": job.ai_match_score,
+                "ai_summary": job.ai_summary,
+                "ai_recommended": job.ai_recommended,
+                "is_new": job.is_new,
+                "discovered_at": job.discovered_at.isoformat() if job.discovered_at else None,
+                "posted_date": job.posted_date.isoformat() if job.posted_date else None,
+            })
+        
+        return jobs_by_stage
+    except Exception as e:
+        logger.error(f"Error getting pipeline jobs: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting pipeline jobs: {str(e)}")
+
+
+@router.patch("/jobs/{job_id}/pipeline-stage")
+async def update_pipeline_stage(
+    job_id: int,
+    update: PipelineStageUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Move job to different pipeline stage"""
+    try:
+        valid_stages = ["discover", "review", "prepare", "apply", "follow_up", "archive"]
+        if update.stage not in valid_stages:
+            raise HTTPException(status_code=400, detail=f"Invalid stage. Must be one of: {valid_stages}")
+        
+        result = await db.execute(select(Job).where(Job.id == job_id))
+        job = result.scalar_one_or_none()
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        old_stage = job.pipeline_stage
+        job.pipeline_stage = update.stage
+        job.updated_at = datetime.utcnow()
+        
+        # Create activity log entry
+        activity = JobActivity(
+            job_id=job_id,
+            activity_type="pipeline_stage_changed",
+            activity_description=f"Job moved from {old_stage} to {update.stage}",
+            metadata={"old_stage": old_stage, "new_stage": update.stage},
+            created_by="user"
+        )
+        db.add(activity)
+        
+        await db.commit()
+        await db.refresh(job)
+        
+        return {"message": "Pipeline stage updated", "pipeline_stage": job.pipeline_stage}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating pipeline stage: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error updating pipeline stage: {str(e)}")
+
+
+@router.get("/jobs/{job_id}/context")
+async def get_job_context(
+    job_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get complete job context (documents, tasks, follow-ups, activities)"""
+    try:
+        result = await db.execute(
+            select(Job)
+            .options(
+                selectinload(Job.generated_documents),
+                selectinload(Job.tasks),
+                selectinload(Job.follow_ups),
+                selectinload(Job.applications),
+                selectinload(Job.activities)
+            )
+            .where(Job.id == job_id)
+        )
+        job = result.scalar_one_or_none()
+        
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        
+        # Get documents using document service
+        doc_service = DocumentService(db)
+        documents = await doc_service.get_job_documents(job_id)
+        
+        # Get user documents (all available)
+        user_docs_result = await db.execute(
+            select(UserDocument).order_by(desc(UserDocument.created_at))
+        )
+        all_user_docs = user_docs_result.scalars().all()
+        
+        # Consolidate AI content
+        ai_content = {
+            "summary": job.ai_summary,
+            "pros": job.ai_pros or [],
+            "cons": job.ai_cons or [],
+            "keywords_matched": job.ai_keywords_matched or [],
+            "match_score": job.ai_match_score,
+            "recommended": job.ai_recommended,
+        }
+        if job.ai_content:
+            ai_content.update(job.ai_content)
+        
+        return {
+            "job": {
+                "id": job.id,
+                "title": job.title,
+                "company": job.company,
+                "location": job.location,
+                "url": job.url,
+                "description": job.description,
+                "status": job.status,
+                "pipeline_stage": job.pipeline_stage or "discover",
+                "notes": job.notes,
+                "discovered_at": job.discovered_at.isoformat() if job.discovered_at else None,
+                "posted_date": job.posted_date.isoformat() if job.posted_date else None,
+            },
+            "ai_content": ai_content,
+            "documents": documents,
+            "tasks": [
+                {
+                    "id": t.id,
+                    "task_type": t.task_type,
+                    "title": t.title,
+                    "priority": t.priority,
+                    "status": t.status,
+                    "due_date": t.due_date.isoformat() if t.due_date else None,
+                    "notes": t.notes,
+                    "created_at": t.created_at.isoformat() if t.created_at else None,
+                }
+                for t in job.tasks
+            ],
+            "follow_ups": [
+                {
+                    "id": f.id,
+                    "follow_up_date": f.follow_up_date.isoformat() if f.follow_up_date else None,
+                    "action_type": f.action_type,
+                    "notes": f.notes,
+                    "completed": f.completed,
+                }
+                for f in job.follow_ups
+            ],
+            "applications": [
+                {
+                    "id": a.id,
+                    "status": a.status,
+                    "application_date": a.application_date.isoformat() if a.application_date else None,
+                    "portal_url": a.portal_url,
+                    "confirmation_number": a.confirmation_number,
+                    "notes": a.notes,
+                }
+                for a in job.applications
+            ],
+            "activities": [
+                {
+                    "id": a.id,
+                    "activity_type": a.activity_type,
+                    "activity_description": a.activity_description,
+                    "metadata": a.metadata,
+                    "created_at": a.created_at.isoformat() if a.created_at else None,
+                    "created_by": a.created_by,
+                }
+                for a in sorted(job.activities, key=lambda x: x.created_at, reverse=True)
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting job context: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting job context: {str(e)}")
+
+
+@router.get("/documents/job/{job_id}")
+async def get_job_documents(
+    job_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all documents for a job"""
+    try:
+        doc_service = DocumentService(db)
+        documents = await doc_service.get_job_documents(job_id)
+        return documents
+    except Exception as e:
+        logger.error(f"Error getting job documents: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting job documents: {str(e)}")
+
+
 # Follow-up endpoints
 @router.post("/followups")
 async def create_followup(
@@ -1845,6 +2094,68 @@ async def resume_scheduler(request: Request):
         return {"message": "Scheduler resumed"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error resuming scheduler: {str(e)}")
+
+
+# Unified automation and companies endpoints
+@router.get("/unified/status")
+async def get_unified_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    limit_logs: int = Query(10, description="Number of recent crawl logs to include")
+):
+    """
+    Get unified status combining automation controls and company data
+    
+    Returns a single unified response with:
+    - automation: scheduler, crawler, and discovery status
+    - companies: overview and health summary
+    - recent_activity: last crawl logs and recent discoveries
+    - metrics: combined success rates and averages
+    """
+    try:
+        from app.services.unified_automation_service import UnifiedAutomationService
+        
+        scheduler = request.app.state.scheduler
+        orchestrator = request.app.state.crawler
+        
+        service = UnifiedAutomationService(scheduler, orchestrator)
+        unified_status = await service.get_unified_status(db, limit_logs)
+        
+        return unified_status
+    except Exception as e:
+        logger.error(f"Error getting unified status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting unified status: {str(e)}")
+
+
+@router.get("/unified/companies")
+async def get_unified_companies(
+    request: Request,
+    active_only: bool = Query(False, description="Only return active companies"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get companies with their automation state (last crawl, health, priority)
+    
+    Returns companies with additional automation metadata:
+    - total_crawls_30d: Number of crawls in last 30 days
+    - successful_crawls_30d: Number of successful crawls
+    - success_rate: Percentage of successful crawls
+    - health_status: Overall health status (healthy, warning, critical, inactive, unknown)
+    - needs_attention: Boolean indicating if company needs attention
+    """
+    try:
+        from app.services.unified_automation_service import UnifiedAutomationService
+        
+        scheduler = request.app.state.scheduler
+        orchestrator = request.app.state.crawler
+        
+        service = UnifiedAutomationService(scheduler, orchestrator)
+        unified_companies = await service.get_unified_companies(db, active_only)
+        
+        return unified_companies
+    except Exception as e:
+        logger.error(f"Error getting unified companies: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error getting unified companies: {str(e)}")
 
 
 # Cleanup stuck crawl logs endpoint

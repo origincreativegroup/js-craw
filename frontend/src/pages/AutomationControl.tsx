@@ -22,15 +22,14 @@ import {
 import Card from '../components/Card';
 import Button from '../components/Button';
 import {
-  getCrawlStatus,
+  getUnifiedStatus,
+  getUnifiedCompanies,
   triggerCrawl,
   cancelCrawl,
   pauseScheduler,
   resumeScheduler,
-  getSchedulerStatus,
   updateSchedulerInterval,
   updateDiscoveryInterval,
-  getDiscoveryStatus,
   runDiscovery,
   getPendingCompanies,
   approvePendingCompany,
@@ -40,7 +39,7 @@ import {
   getOpenWebUIStatus,
   verifyOpenWebUIAuth,
 } from '../services/api';
-import type { CrawlStatus, DiscoveryStatus, PendingCompany } from '../types';
+import type { UnifiedStatus, UnifiedCompany, PendingCompany } from '../types';
 import { format, parseISO } from 'date-fns';
 import './AutomationControl.css';
 
@@ -58,14 +57,13 @@ type SectionId = 'overview' | 'crawler' | 'discovery' | 'activity' | 'settings';
 const AutomationControl = () => {
   const [activeSection, setActiveSection] = useState<SectionId>('overview');
   
-  // Crawler state
-  const [crawlStatus, setCrawlStatus] = useState<CrawlStatus | null>(null);
-  const [schedulerStatus, setSchedulerStatus] = useState<any>(null);
+  // Unified state
+  const [unifiedStatus, setUnifiedStatus] = useState<UnifiedStatus | null>(null);
+  const [unifiedCompanies, setUnifiedCompanies] = useState<UnifiedCompany[]>([]);
   const [jobCrawlerAction, setJobCrawlerAction] = useState<string | null>(null);
   const [schedulerInterval, setSchedulerInterval] = useState<string>('');
   
   // Discovery state
-  const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
   const [pendingCompanies, setPendingCompanies] = useState<PendingCompany[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryInterval, setDiscoveryInterval] = useState<string>('');
@@ -110,9 +108,9 @@ const AutomationControl = () => {
       }, 5000);
       
       // Fast polling every 1-2 seconds when crawler is running
-      if (crawlStatus?.is_running) {
+      if (unifiedStatus?.automation.crawler.is_running) {
         fastPollingRef.current = setInterval(() => {
-          loadCrawlStatus();
+          loadUnifiedData();
         }, 2000);
       }
     };
@@ -123,12 +121,12 @@ const AutomationControl = () => {
       if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
       if (fastPollingRef.current) clearInterval(fastPollingRef.current);
     };
-  }, [crawlStatus?.is_running]);
+  }, [unifiedStatus?.automation.crawler.is_running]);
 
   const loadAllData = async () => {
     try {
       await Promise.all([
-        loadCrawlStatus(),
+        loadUnifiedData(),
         loadDiscoveryData(),
         loadSettingsData(),
       ]);
@@ -139,25 +137,32 @@ const AutomationControl = () => {
     }
   };
 
-  const loadCrawlStatus = async () => {
+  const loadUnifiedData = async () => {
     try {
-      const [crawlData, schedulerData] = await Promise.all([
-        getCrawlStatus(),
-        getSchedulerStatus().catch(() => null),
+      const [statusData, companiesData] = await Promise.all([
+        getUnifiedStatus(20),
+        getUnifiedCompanies(false),
       ]);
-      setCrawlStatus(crawlData);
-      setSchedulerStatus(schedulerData);
-      if (schedulerData?.interval_minutes) {
-        setSchedulerInterval(schedulerData.interval_minutes.toString());
+      setUnifiedStatus(statusData);
+      setUnifiedCompanies(companiesData);
+      
+      // Update scheduler interval from unified status
+      if (statusData?.automation.scheduler.interval_minutes) {
+        setSchedulerInterval(statusData.automation.scheduler.interval_minutes.toString());
       }
       
-      // Add to activity log
-      if (crawlData?.recent_logs) {
-        const newActivities = crawlData.recent_logs.slice(0, 5).map((log: any) => ({
+      // Update discovery interval from unified status
+      if (statusData?.automation.discovery.discovery_interval_hours) {
+        setDiscoveryInterval(statusData.automation.discovery.discovery_interval_hours.toString());
+      }
+      
+      // Add to activity log from unified status
+      if (statusData?.automation.crawler.recent_logs) {
+        const newActivities = statusData.automation.crawler.recent_logs.slice(0, 5).map((log: any) => ({
           id: `log-${log.id}`,
           type: 'crawl',
           timestamp: log.started_at,
-          message: `${log.company_name || 'Company'} - ${log.status} (${log.jobs_found || 0} jobs)`,
+          message: `${log.company_id ? `Company ${log.company_id}` : 'Company'} - ${log.status} (${log.jobs_found || 0} jobs)`,
           status: log.status,
           details: log,
         }));
@@ -166,22 +171,30 @@ const AutomationControl = () => {
           return combined.slice(0, 50); // Keep last 50 activities
         });
       }
+      
+      // Add recent activity from unified status
+      if (statusData?.recent_activity.recent_crawls) {
+        const recentCrawls = statusData.recent_activity.recent_crawls.slice(0, 5).map((log: any) => ({
+          id: `activity-${log.id}`,
+          type: 'crawl',
+          timestamp: log.started_at,
+          message: `Crawl ${log.status} - ${log.jobs_found} jobs found`,
+          status: log.status,
+        }));
+        setActivityLog(prev => {
+          const combined = [...recentCrawls, ...prev];
+          return combined.slice(0, 50);
+        });
+      }
     } catch (error) {
-      console.error('Error loading crawl status:', error);
+      console.error('Error loading unified data:', error);
     }
   };
 
   const loadDiscoveryData = async () => {
     try {
-      const [statusData, pendingData] = await Promise.all([
-        getDiscoveryStatus(),
-        getPendingCompanies(),
-      ]);
-      setDiscoveryStatus(statusData);
+      const pendingData = await getPendingCompanies();
       setPendingCompanies(pendingData);
-      if (statusData?.discovery_interval_hours) {
-        setDiscoveryInterval(statusData.discovery_interval_hours.toString());
-      }
     } catch (error) {
       console.error('Error loading discovery data:', error);
     }
@@ -205,7 +218,7 @@ const AutomationControl = () => {
     setJobCrawlerAction('start');
     try {
       await triggerCrawl('all');
-      setTimeout(() => loadCrawlStatus(), 1000);
+      setTimeout(() => loadUnifiedData(), 1000);
       addActivity('crawl', 'Job crawler started', 'success');
     } catch (error: any) {
       console.error('Error starting job crawler:', error);
@@ -220,7 +233,7 @@ const AutomationControl = () => {
     setJobCrawlerAction('pause');
     try {
       await pauseScheduler();
-      setTimeout(() => loadCrawlStatus(), 1000);
+      setTimeout(() => loadUnifiedData(), 1000);
       addActivity('crawl', 'Job crawler paused', 'info');
     } catch (error: any) {
       console.error('Error pausing job crawler:', error);
@@ -234,7 +247,7 @@ const AutomationControl = () => {
     setJobCrawlerAction('resume');
     try {
       await resumeScheduler();
-      setTimeout(() => loadCrawlStatus(), 1000);
+      setTimeout(() => loadUnifiedData(), 1000);
       addActivity('crawl', 'Job crawler resumed', 'success');
     } catch (error: any) {
       console.error('Error resuming job crawler:', error);
@@ -251,7 +264,7 @@ const AutomationControl = () => {
     setJobCrawlerAction('stop');
     try {
       await cancelCrawl();
-      setTimeout(() => loadCrawlStatus(), 1000);
+      setTimeout(() => loadUnifiedData(), 1000);
       addActivity('crawl', 'Job crawler stopped', 'warning');
     } catch (error: any) {
       console.error('Error stopping job crawler:', error);
@@ -435,8 +448,12 @@ const AutomationControl = () => {
     return <div className="loading">Loading automation control center...</div>;
   }
 
-  const isPaused = schedulerStatus?.is_paused || false;
-  const isJobCrawlerRunning = crawlStatus?.is_running || false;
+  const isPaused = unifiedStatus?.automation.scheduler.is_paused || false;
+  const isJobCrawlerRunning = unifiedStatus?.automation.crawler.is_running || false;
+  const crawler = unifiedStatus?.automation.crawler;
+  const scheduler = unifiedStatus?.automation.scheduler;
+  const discovery = unifiedStatus?.automation.discovery;
+  const companies = unifiedStatus?.companies;
   const filteredActivities = activityFilter === 'all' 
     ? activityLog 
     : activityLog.filter(a => a.type === activityFilter);
@@ -494,16 +511,16 @@ const AutomationControl = () => {
                     <div className="metric-label">Job Crawler Status</div>
                   </div>
                 </div>
-                {crawlStatus?.progress && (
+                {crawler?.progress && (
                   <div className="metric-progress">
                     <div className="progress-text">
-                      {crawlStatus.progress.current} / {crawlStatus.progress.total} companies
+                      {crawler.progress.current} / {crawler.progress.total} companies
                     </div>
                     <div className="progress-bar">
                       <div
                         className="progress-fill"
                         style={{
-                          width: `${(crawlStatus.progress.current / crawlStatus.progress.total) * 100}%`,
+                          width: `${(crawler.progress.current / crawler.progress.total) * 100}%`,
                         }}
                       />
                     </div>
@@ -515,20 +532,20 @@ const AutomationControl = () => {
                 <div className="metric-header">
                   <Search size={24} className="metric-icon" />
                   <div>
-                    <div className="metric-value">{discoveryStatus?.active_companies || 0}</div>
+                    <div className="metric-value">{companies?.active_companies || discovery?.active_companies || 0}</div>
                     <div className="metric-label">Active Companies</div>
                   </div>
                 </div>
-                {discoveryStatus && (
+                {discovery && (
                   <div className="metric-progress">
                     <div className="progress-text">
-                      {discoveryStatus.active_companies} / {discoveryStatus.target_companies} target
+                      {discovery.active_companies} / {discovery.target_companies} target
                     </div>
                     <div className="progress-bar">
                       <div
                         className="progress-fill"
                         style={{
-                          width: `${Math.min(100, (discoveryStatus.active_companies / discoveryStatus.target_companies) * 100)}%`,
+                          width: `${Math.min(100, (discovery.active_companies / discovery.target_companies) * 100)}%`,
                         }}
                       />
                     </div>
@@ -611,34 +628,34 @@ const AutomationControl = () => {
               </div>
 
               <div className="crawl-info">
-                {isJobCrawlerRunning && crawlStatus ? (
+                {isJobCrawlerRunning && crawler ? (
                   <>
                     <div className="crawl-progress">
                       <div className="progress-header">
                         <span>Progress</span>
                         <span className="progress-text">
-                          {crawlStatus.progress.current} / {crawlStatus.progress.total} companies
+                          {crawler.progress.current} / {crawler.progress.total} companies
                         </span>
                       </div>
                       <div className="progress-bar">
                         <div
                           className="progress-fill"
                           style={{
-                            width: `${(crawlStatus.progress.current / crawlStatus.progress.total) * 100}%`,
+                            width: `${(crawler.progress.current / crawler.progress.total) * 100}%`,
                           }}
                         />
                       </div>
                     </div>
-                    {crawlStatus.current_company && (
+                    {crawler.current_company && (
                       <div className="current-company">
                         <Building2 size={16} />
-                        <span>Currently crawling: <strong>{crawlStatus.current_company}</strong></span>
+                        <span>Currently crawling: <strong>{crawler.current_company}</strong></span>
                       </div>
                     )}
-                    {crawlStatus.eta_seconds && (
+                    {crawler.eta_seconds && (
                       <div className="eta">
                         <Clock size={16} />
-                        <span>ETA: {Math.round(crawlStatus.eta_seconds / 60)} minutes</span>
+                        <span>ETA: {Math.round(crawler.eta_seconds / 60)} minutes</span>
                       </div>
                     )}
                     <div className="crawl-actions" style={{ marginTop: '20px' }}>
@@ -677,10 +694,10 @@ const AutomationControl = () => {
                     <div className="idle-message">
                       <CheckCircle size={48} style={{ color: '#10b981' }} />
                       <h3>Job crawler is idle</h3>
-                      <p>Start crawling {discoveryStatus?.active_companies || 0} active companies</p>
-                      {schedulerStatus && (
+                      <p>Start crawling {companies?.active_companies || discovery?.active_companies || 0} active companies</p>
+                      {scheduler && scheduler.interval_minutes && (
                         <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '8px' }}>
-                          Scheduled: Every {schedulerStatus.interval_minutes} minutes
+                          Scheduled: Every {scheduler.interval_minutes} minutes
                         </p>
                       )}
                     </div>
@@ -739,7 +756,7 @@ const AutomationControl = () => {
                       Update
                     </Button>
                   </div>
-                  <small className="form-help">Current interval: {schedulerStatus?.interval_minutes || 'N/A'} minutes</small>
+                  <small className="form-help">Current interval: {scheduler?.interval_minutes || 'N/A'} minutes</small>
                 </div>
               </div>
             </Card>
@@ -757,28 +774,28 @@ const AutomationControl = () => {
                     <p className="card-subtitle">Discover new companies via LinkedIn, Indeed, and web search</p>
                   </div>
                 </div>
-                <div className={`status-indicator ${discoveryStatus?.discovery_enabled ? 'idle' : 'disabled'}`}>
+                <div className={`status-indicator ${discovery?.discovery_enabled ? 'idle' : 'disabled'}`}>
                   <span className="status-dot"></span>
-                  {discoveryStatus?.discovery_enabled ? 'Enabled' : 'Disabled'}
+                  {discovery?.discovery_enabled ? 'Enabled' : 'Disabled'}
                 </div>
               </div>
 
               <div className="discovery-info">
                 <div className="stats-grid" style={{ marginBottom: '20px' }}>
                   <div className="stat-item">
-                    <div className="stat-value">{discoveryStatus?.total_companies || 0}</div>
+                    <div className="stat-value">{discovery?.total_companies || companies?.total_companies || 0}</div>
                     <div className="stat-label">Total Companies</div>
                   </div>
                   <div className="stat-item">
-                    <div className="stat-value">{discoveryStatus?.active_companies || 0}</div>
+                    <div className="stat-value">{discovery?.active_companies || companies?.active_companies || 0}</div>
                     <div className="stat-label">Active Companies</div>
                   </div>
                   <div className="stat-item">
-                    <div className="stat-value">{discoveryStatus?.pending_count || 0}</div>
+                    <div className="stat-value">{discovery?.pending_count || 0}</div>
                     <div className="stat-label">Pending Approval</div>
                   </div>
                   <div className="stat-item">
-                    <div className="stat-value">{discoveryStatus?.target_companies || 0}</div>
+                    <div className="stat-value">{discovery?.target_companies || 0}</div>
                     <div className="stat-label">Target</div>
                   </div>
                 </div>
@@ -787,27 +804,27 @@ const AutomationControl = () => {
                   <div className="progress-header">
                     <span>Discovery Progress</span>
                     <span className="progress-text">
-                      {discoveryStatus?.total_companies || 0} / {discoveryStatus?.target_companies || 0}
-                      ({Math.round(((discoveryStatus?.total_companies || 0) / (discoveryStatus?.target_companies || 1)) * 100)}%)
+                      {discovery?.total_companies || companies?.total_companies || 0} / {discovery?.target_companies || 0}
+                      ({Math.round(((discovery?.total_companies || companies?.total_companies || 0) / (discovery?.target_companies || 1)) * 100)}%)
                     </span>
                   </div>
                   <div className="progress-bar">
                     <div
                       className="progress-fill"
                       style={{
-                        width: `${Math.min(100, ((discoveryStatus?.total_companies || 0) / (discoveryStatus?.target_companies || 1)) * 100)}%`,
+                        width: `${Math.min(100, ((discovery?.total_companies || companies?.total_companies || 0) / (discovery?.target_companies || 1)) * 100)}%`,
                         background: 'linear-gradient(90deg, #ec4899, #8b5cf6)'
                       }}
                     />
                   </div>
                 </div>
 
-                {discoveryStatus?.discovery_enabled && (
+                {discovery?.discovery_enabled && (
                   <div style={{ marginBottom: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
                       <Clock size={14} style={{ color: 'var(--text-muted)' }} />
                       <span style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
-                        Runs automatically every {discoveryStatus.discovery_interval_hours} hours
+                        Runs automatically every {discovery.discovery_interval_hours} hours
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
