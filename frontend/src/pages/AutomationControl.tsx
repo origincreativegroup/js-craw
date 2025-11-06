@@ -174,6 +174,9 @@ const AutomationControl = () => {
       ]);
       setDiscoveryStatus(statusData);
       setPendingCompanies(pendingData);
+      if (statusData?.discovery_interval_hours) {
+        setDiscoveryInterval(statusData.discovery_interval_hours.toString());
+      }
     } catch (error) {
       console.error('Error loading discovery data:', error);
     }
