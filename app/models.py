@@ -129,9 +129,10 @@ class Job(Base):
     ai_selected_date = Column(DateTime, nullable=True, index=True)  # Date selected as top job
 
     # User tracking
-    status = Column(String(50), default="new", index=True)  # new, viewed, applied, rejected, saved
+    status = Column(String(50), default="new", index=True)  # new, viewed, applied, rejected, saved, archived
     notes = Column(Text, nullable=True)
     is_new = Column(Boolean, default=True, index=True)
+    archived_at = Column(DateTime, nullable=True, index=True)  # When job was archived (90+ days old)
 
     discovered_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -143,6 +144,7 @@ class Job(Base):
     generated_documents = relationship("GeneratedDocument", back_populates="job")
     tasks = relationship("Task", back_populates="job")
     applications = relationship("Application", back_populates="job")
+    feedback = relationship("JobFeedback", back_populates="job")
 
 
 class FollowUp(Base):
@@ -228,6 +230,12 @@ class GeneratedDocument(Base):
     generated_at = Column(DateTime, default=datetime.utcnow, index=True)
     file_path = Column(String(500), nullable=True)  # Optional: path to saved file
     
+    # Review workflow
+    review_status = Column(String(50), default="pending", index=True)  # pending, approved, rejected, edited
+    reviewed_at = Column(DateTime, nullable=True)
+    review_notes = Column(Text, nullable=True)  # User notes from review
+    edited_content = Column(Text, nullable=True)  # User-edited version
+    
     # Relationships
     job = relationship("Job", back_populates="generated_documents")
 
@@ -309,3 +317,23 @@ class Application(Base):
     job = relationship("Job", back_populates="applications")
     resume_document = relationship("GeneratedDocument", foreign_keys=[resume_version_id], post_update=True)
     cover_letter_document = relationship("GeneratedDocument", foreign_keys=[cover_letter_id], post_update=True)
+
+
+class JobFeedback(Base):
+    """User feedback on AI job recommendations"""
+    __tablename__ = "job_feedback"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False, index=True)
+    
+    # Feedback data
+    feedback_type = Column(String(50), nullable=False, index=True)  # match_score, recommendation, quality
+    feedback_value = Column(String(50), nullable=False)  # positive, negative, neutral, or numeric value
+    feedback_text = Column(Text, nullable=True)  # Optional text feedback
+    ai_match_score_actual = Column(Float, nullable=True)  # User's assessment of actual match score
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Relationships
+    job = relationship("Job", back_populates="feedback")

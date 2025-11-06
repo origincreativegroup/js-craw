@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useState, useRef } from 'react';
 import {
   Upload,
   Save,
@@ -8,6 +8,11 @@ import {
   ClipboardList,
   FileText,
   PenTool,
+  X,
+  File,
+  Loader,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -44,6 +49,13 @@ const formatExperience = (profile: UserProfile | null): string => {
     .join('\n\n');
 };
 
+interface FileUploadItem {
+  file: File;
+  status: 'pending' | 'uploading' | 'success' | 'error';
+  error?: string;
+  progress?: number;
+}
+
 const CareerCopilot = () => {
   const [documents, setDocuments] = useState<UserDocument[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
@@ -51,6 +63,9 @@ const CareerCopilot = () => {
   const [selectedDocumentContent, setSelectedDocumentContent] = useState('');
   const [savingDocument, setSavingDocument] = useState(false);
   const [_profile, setProfile] = useState<UserProfile | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<FileUploadItem[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [jobTitle, setJobTitle] = useState('');
   const [jobCompany, setJobCompany] = useState('');
@@ -79,15 +94,10 @@ const CareerCopilot = () => {
     try {
       const data = await getUserProfile();
       setProfile(data);
-      if (!userSummary) {
-        setUserSummary(data.base_resume ? data.base_resume.slice(0, 900) : '');
-      }
-      if (!userSkillsInput && data.skills) {
-        setUserSkillsInput(data.skills.join(', '));
-      }
-      if (!userExperience) {
-        setUserExperience(formatExperience(data));
-      }
+      // Always populate from filter profile
+      setUserSummary(data.base_resume || '');
+      setUserSkillsInput(data.skills ? data.skills.join(', ') : '');
+      setUserExperience(formatExperience(data));
     } catch (error) {
       console.error('Failed to load profile', error);
     }
@@ -101,6 +111,10 @@ const CareerCopilot = () => {
       if (docs.length > 0 && !selectedDocumentId) {
         setSelectedDocumentId(docs[0].id);
       }
+      // Auto-select all documents for analysis
+      if (docs.length > 0) {
+        setAnalysisDocs(docs.map(doc => doc.id));
+      }
     } catch (error) {
       console.error('Failed to load documents', error);
     } finally {
@@ -108,21 +122,92 @@ const CareerCopilot = () => {
     }
   };
 
+  const handleFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+
+    // Create upload queue items
+    const queueItems: FileUploadItem[] = fileArray.map((file) => ({
+      file,
+      status: 'pending',
+    }));
+    setUploadQueue(queueItems);
+
+    // Mark all as uploading
+    setUploadQueue((prev) =>
+      prev.map((item) => ({ ...item, status: 'uploading' as const, progress: 50 }))
+    );
+
+    try {
+      // Upload all files in one request (backend supports multiple files)
+      const result = await uploadUserDocuments(fileArray);
+
+      // Create a map of uploaded documents by filename for matching
+      const uploadedMap = new Map(result.map((doc) => [doc.filename, doc]));
+
+      // Update queue with success status for uploaded files
+      setUploadQueue((prev) =>
+        prev.map((item) => {
+          const uploaded = uploadedMap.get(item.file.name);
+          if (uploaded) {
+            return { ...item, status: 'success' as const, progress: 100 };
+          }
+          return item;
+        })
+      );
+
+      // Reload documents to show newly uploaded files
+      await loadDocuments();
+    } catch (error: any) {
+      // If upload fails, mark all as error
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Upload failed';
+      setUploadQueue((prev) =>
+        prev.map((item) => ({
+          ...item,
+          status: 'error' as const,
+          error: errorMessage,
+        }))
+      );
+    }
+
+    // Clear queue after a delay to show success/error states
+    setTimeout(() => {
+      setUploadQueue([]);
+    }, 3000);
+  };
+
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) {
       return;
     }
-
-    try {
-      setDocumentsLoading(true);
-      await uploadUserDocuments(event.target.files);
+    await handleFiles(event.target.files);
+    if (event.target) {
       event.target.value = '';
-      await loadDocuments();
-    } catch (error) {
-      console.error('Upload failed', error);
-    } finally {
-      setDocumentsLoading(false);
     }
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await handleFiles(e.dataTransfer.files);
+    }
+  };
+
+  const removeFromQueue = (index: number) => {
+    setUploadQueue((prev) => prev.filter((_, i) => i !== index));
   };
 
   const selectedDocument = useMemo(
@@ -249,21 +334,103 @@ const CareerCopilot = () => {
 
       <div className="career-copilot-grid">
         <div className="document-sidebar">
-          <Card className="document-upload">
+          <Card 
+            className={`document-upload ${dragActive ? 'drag-active' : ''}`}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
             <div className="card-header">
               <div className="card-header-content">
                 <FileText className="card-icon" size={20} />
                 <div>
                   <h3 className="card-title">Document Library</h3>
-                  <p className="card-subtitle">Upload resumes, project writeups, and transcripts.</p>
+                  <p className="card-subtitle">Upload multiple files: resumes, project writeups, and transcripts.</p>
                 </div>
               </div>
             </div>
-            <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer', width: 'fit-content' }}>
-              <Upload size={16} />
-              <span style={{ marginLeft: 6 }}>Upload files</span>
-              <input type="file" multiple onChange={handleUpload} style={{ display: 'none' }} />
-            </label>
+            <div className="upload-zone">
+              <div className="upload-zone-content">
+                <Upload size={24} className="upload-icon" />
+                <p className="upload-text">
+                  Drag and drop files here, or <button 
+                    type="button"
+                    className="upload-link"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    browse to select
+                  </button>
+                </p>
+                <p className="upload-hint">You can select multiple files at once (PDF, TXT, MD, CSV)</p>
+              </div>
+              <input 
+                ref={fileInputRef}
+                type="file" 
+                multiple 
+                onChange={handleUpload} 
+                style={{ display: 'none' }}
+                accept=".pdf,.txt,.md,.csv,application/pdf,text/plain,text/markdown,text/csv"
+              />
+            </div>
+            
+            {uploadQueue.length > 0 && (
+              <div className="upload-queue">
+                <div className="upload-queue-header">
+                  <strong>Uploading {uploadQueue.length} file{uploadQueue.length > 1 ? 's' : ''}...</strong>
+                </div>
+                {uploadQueue.map((item, index) => (
+                  <div key={index} className={`upload-item upload-item-${item.status}`}>
+                    <div className="upload-item-info">
+                      <File size={14} />
+                      <span className="upload-item-name">{item.file.name}</span>
+                      <span className="upload-item-size">
+                        ({(item.file.size / 1024).toFixed(1)} KB)
+                      </span>
+                    </div>
+                    <div className="upload-item-status">
+                      {item.status === 'pending' && (
+                        <span className="upload-status-text">Pending...</span>
+                      )}
+                      {item.status === 'uploading' && (
+                        <>
+                          <Loader size={14} className="spin" />
+                          <span className="upload-status-text">Uploading...</span>
+                        </>
+                      )}
+                      {item.status === 'success' && (
+                        <>
+                          <CheckCircle2 size={14} className="success-icon" />
+                          <span className="upload-status-text">Uploaded</span>
+                        </>
+                      )}
+                      {item.status === 'error' && (
+                        <>
+                          <AlertCircle size={14} className="error-icon" />
+                          <span className="upload-status-text error-text">{item.error}</span>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        className="upload-remove"
+                        onClick={() => removeFromQueue(index)}
+                        aria-label="Remove from queue"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                    {item.status === 'uploading' && (
+                      <div className="upload-progress">
+                        <div 
+                          className="upload-progress-bar" 
+                          style={{ width: `${item.progress || 0}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           <div className="document-list">

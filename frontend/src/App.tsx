@@ -9,9 +9,8 @@ import Companies from './pages/Companies';
 import CompanyDiscovery from './pages/CompanyDiscovery';
 import Automation from './pages/Automation';
 import Settings from './pages/Settings';
-import Apply from './pages/Apply';
-import FilterProfile from './pages/FilterProfile';
-import CareerCopilot from './pages/CareerCopilot';
+import CareerHub from './pages/CareerHub';
+import AutomationControl from './pages/AutomationControl';
 import './App.css';
 
 function App() {
@@ -19,19 +18,23 @@ function App() {
     <Router>
       <Layout>
         <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<Dashboard />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/discovery" element={<Discovery />} />
           <Route path="/jobs" element={<Jobs />} />
-          <Route path="/apply" element={<Apply />} />
-          <Route path="/copilot" element={<CareerCopilot />} />
+          <Route path="/career-hub" element={<CareerHub />} />
+          {/* Redirect old routes to unified Career Hub for backward compatibility */}
+          <Route path="/apply" element={<Navigate to="/career-hub" replace />} />
+          <Route path="/copilot" element={<Navigate to="/career-hub" replace />} />
+          <Route path="/filter-profile" element={<Navigate to="/career-hub" replace />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/follow-ups" element={<FollowUps />} />
           <Route path="/companies" element={<Companies />} />
-          <Route path="/company-discovery" element={<CompanyDiscovery />} />
-          <Route path="/automation" element={<Automation />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/filter-profile" element={<FilterProfile />} />
+          <Route path="/automation-control" element={<AutomationControl />} />
+          {/* Redirect old routes to unified Automation Control for backward compatibility */}
+          <Route path="/company-discovery" element={<Navigate to="/automation-control" replace />} />
+          <Route path="/automation" element={<Navigate to="/automation-control" replace />} />
+          <Route path="/settings" element={<Navigate to="/automation-control" replace />} />
         </Routes>
       </Layout>
     </Router>

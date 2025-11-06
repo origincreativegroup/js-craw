@@ -185,6 +185,33 @@ async def lifespan(app: FastAPI):
     )
     logger.info(f"Scheduled company discovery to run every {discovery_interval_hours} hours")
     
+    # Job archival scheduler - archive old jobs daily
+    async def archive_old_jobs_daily():
+        """Daily job archival workflow"""
+        try:
+            from app.database import AsyncSessionLocal
+            from app.services.job_archival_service import JobArchivalService
+            
+            async with AsyncSessionLocal() as db:
+                archival_service = JobArchivalService()
+                result = await archival_service.archive_old_jobs(
+                    db,
+                    days_old=getattr(settings, 'JOB_ARCHIVAL_DAYS', 90)
+                )
+                logger.info(f"Job archival completed: {result['count']} jobs archived")
+        except Exception as e:
+            logger.error(f"Error in job archival: {e}", exc_info=True)
+    
+    # Schedule job archival daily at 3 AM
+    scheduler.add_job(
+        archive_old_jobs_daily,
+        trigger=CronTrigger(hour=3, minute=0),
+        id="archive_old_jobs",
+        name="Daily job archival",
+        replace_existing=True
+    )
+    logger.info("Scheduled job archival to run daily at 3 AM")
+    
     # Task reminder scheduler
     async def check_task_reminders():
         """Check for due tasks and send reminders"""

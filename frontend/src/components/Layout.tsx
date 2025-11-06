@@ -9,10 +9,9 @@ import {
   Settings,
   Sparkles,
   Compass,
-  FileText,
-  Filter,
   Search,
-  Wand2
+  Briefcase as BriefcaseIcon,
+  Zap
 } from 'lucide-react';
 import './Layout.css';
 
@@ -27,16 +26,24 @@ const Layout = ({ children }: LayoutProps) => {
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { path: '/discovery', icon: Compass, label: 'Discover' },
     { path: '/jobs', icon: Briefcase, label: 'Jobs' },
-    { path: '/apply', icon: FileText, label: 'Apply' },
-    { path: '/copilot', icon: Wand2, label: 'Career Copilot' },
+    { path: '/career-hub', icon: BriefcaseIcon, label: 'Career Hub' },
     { path: '/tasks', icon: CheckSquare, label: 'Tasks' },
     { path: '/follow-ups', icon: Calendar, label: 'Follow-ups' },
     { path: '/companies', icon: Building2, label: 'Companies' },
-    { path: '/company-discovery', icon: Search, label: 'Discovery' },
-    { path: '/automation', icon: Settings, label: 'Automation' },
-    { path: '/filter-profile', icon: Filter, label: 'Filter Profile' },
-    { path: '/settings', icon: Settings, label: 'Settings' },
+    { path: '/automation-control', icon: Zap, label: 'Automation Control' },
   ];
+
+  // Check if current path matches career hub or old routes
+  const isCareerHubActive = location.pathname === '/career-hub' || 
+    location.pathname === '/apply' || 
+    location.pathname === '/copilot' || 
+    location.pathname === '/filter-profile';
+
+  // Check if current path matches automation control or old routes
+  const isAutomationControlActive = location.pathname === '/automation-control' || 
+    location.pathname === '/automation' || 
+    location.pathname === '/company-discovery' || 
+    location.pathname === '/settings';
 
   return (
     <div className="layout">
@@ -51,7 +58,14 @@ const Layout = ({ children }: LayoutProps) => {
         <nav className="sidebar-nav">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path;
+            let isActive = false;
+            if (item.path === '/career-hub') {
+              isActive = isCareerHubActive;
+            } else if (item.path === '/automation-control') {
+              isActive = isAutomationControlActive;
+            } else {
+              isActive = location.pathname === item.path;
+            }
             return (
               <Link
                 key={item.path}

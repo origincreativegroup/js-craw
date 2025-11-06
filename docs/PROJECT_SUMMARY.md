@@ -4,8 +4,12 @@
 
 A fully functional, production-ready job search automation system with:
 
-✅ **Automated Crawling**: LinkedIn & Indeed every 30 minutes
-✅ **AI Analysis**: Local LLM (Ollama) for intelligent job matching
+✅ **Automated Crawling**: ALL active companies every 30 minutes (Greenhouse, Lever, Generic, Indeed, LinkedIn)
+✅ **AI Analysis**: Local LLM (Ollama) for intelligent job matching and ranking
+  - Continuous AI ranking every 60 minutes
+  - Daily top 5 job selection at 3 PM
+✅ **AI Document Generation**: Automatically generates tailored resumes and cover letters for top jobs daily
+✅ **React TypeScript Frontend**: Modern, component-based UI with real-time updates
 ✅ **Mobile Notifications**: Push alerts via ntfy, Pushover, or Telegram
 ✅ **Web Dashboard**: Clean, responsive UI for managing everything
 ✅ **Secure Storage**: Encrypted credentials, PostgreSQL database
@@ -52,8 +56,12 @@ job-crawler/
 │   ├── app/notifications/notifier.py
 │   └── app/utils/crypto.py
 │
-└── Frontend (1 file)
-    └── static/index.html
+├── Frontend (React TypeScript)
+│   ├── src/components/ - Reusable UI components
+│   ├── src/pages/ - Page components (Dashboard, Jobs, Companies, etc.)
+│   ├── src/services/ - API service layer
+│   └── src/types/ - TypeScript definitions
+└── static/ - Built frontend assets (compiled from frontend/)
 ```
 
 ## 🚀 Quick Start (10 Minutes)
@@ -330,3 +338,10 @@ Then open: http://localhost:8001/static/index.html
 **Questions?** Check the README.md for detailed information.
 **Issues?** Review the logs with `docker-compose logs`.
 **Success?** Update your resume and start applying! 💼
+
+---
+
+**Status**: 🟢 Production Ready - All Features Complete
+**Last Updated**: November 5, 2025
+**Current Deployment**: pi-forge (192.168.50.157:8001)
+**All Phases**: ✅ Complete - System fully operational

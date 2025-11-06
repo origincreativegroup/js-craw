@@ -345,3 +345,401 @@
   color: var(--text-muted);
 }
 
+/* Unified Status Badge */
+.unified-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.status-indicator-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.status-indicator.paused {
+  background: var(--warning);
+  animation: pulse 2s infinite;
+}
+
+/* Automation Status Section */
+.automation-status-section {
+  margin-bottom: 32px;
+}
+
+.automation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.view-details-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: gap 0.2s;
+}
+
+.view-details-link:hover {
+  gap: 8px;
+}
+
+.automation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.automation-card {
+  border: 1px solid var(--border);
+  transition: all var(--transition-base);
+  animation: scale-in 0.4s ease-out;
+}
+
+.automation-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-xl);
+  border-color: var(--primary);
+}
+
+.card-header-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.card-icon {
+  color: var(--primary);
+  padding: 8px;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 8px;
+}
+
+.card-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 4px 0 0 0;
+}
+
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-badge.running {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.status-badge.idle {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--text-muted);
+}
+
+.status-badge.paused {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning);
+}
+
+.status-badge.active {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.automation-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.current-item {
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.eta-info,
+.queue-info {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+.idle-info {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-muted);
+}
+
+.idle-info p {
+  margin: 4px 0;
+}
+
+.next-run-info {
+  font-size: 13px;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.scheduler-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.scheduler-detail:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.detail-value {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Health Metrics */
+.health-metrics-card {
+  margin-top: 24px;
+}
+
+.health-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.health-metric {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  transition: all var(--transition-base);
+}
+
+.health-metric:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.health-metric.healthy {
+  border-left: 4px solid var(--success);
+}
+
+.health-metric.warning {
+  border-left: 4px solid var(--warning);
+}
+
+.health-metric.error {
+  border-left: 4px solid var(--danger);
+}
+
+.health-metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.health-metric-type {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.health-status-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.health-status-badge.healthy {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.health-status-badge.warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning);
+}
+
+.health-status-badge.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+
+.health-metric-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.health-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.health-stat-label {
+  color: var(--text-muted);
+}
+
+.health-stat-value {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.health-stat-value.error {
+  color: var(--danger);
+}
+
+/* Quick Actions */
+.quick-actions-card {
+  margin-bottom: 32px;
+}
+
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.quick-action-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  transition: all var(--transition-base);
+  background: var(--bg);
+}
+
+.quick-action-item:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--primary);
+}
+
+.quick-action-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.quick-action-icon.career-hub {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--primary);
+}
+
+.quick-action-icon.automation {
+  background: rgba(139, 92, 246, 0.1);
+  color: #8b5cf6;
+}
+
+.quick-action-icon.jobs {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.quick-action-icon.companies {
+  background: rgba(6, 182, 212, 0.1);
+  color: var(--info);
+}
+
+.quick-action-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.quick-action-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px 0;
+}
+
+.quick-action-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.quick-action-arrow {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.quick-action-item:hover .quick-action-arrow {
+  transform: translateX(4px);
+  color: var(--primary);
+}
+
+/* Animations */
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+

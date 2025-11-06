@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { MessageSquare, X, Minimize2, Maximize2, ExternalLink } from 'lucide-react';
+import { MessageSquare, X, Minimize2, Maximize2, ExternalLink, Globe, RefreshCw } from 'lucide-react';
 import Button from './Button';
-import { getOpenWebUIInfo } from '../services/api';
+import { getOpenWebUIInfo, sendFullContextToOpenWebUI } from '../services/api';
 import './OpenWebUIChat.css';
 
 interface OpenWebUIChatProps {
@@ -26,6 +26,7 @@ const OpenWebUIChat = ({
   const [isMinimized, setIsMinimized] = useState(minimized);
   const [openwebuiUrl, setOpenwebuiUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [sendingFullContext, setSendingFullContext] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -57,6 +58,22 @@ const OpenWebUIChat = ({
   const handleOpenInNewTab = () => {
     if (openwebuiUrl) {
       window.open(openwebuiUrl, '_blank');
+    }
+  };
+
+  const handleSendFullContext = async () => {
+    if (!openwebuiUrl) return;
+    
+    setSendingFullContext(true);
+    try {
+      await sendFullContextToOpenWebUI();
+      // Open OpenWebUI after sending context
+      window.open(openwebuiUrl, '_blank');
+    } catch (error) {
+      console.error('Error sending full context:', error);
+      alert('Failed to send full context to OpenWebUI');
+    } finally {
+      setSendingFullContext(false);
     }
   };
 
@@ -137,6 +154,16 @@ const OpenWebUIChat = ({
             title="Open in new tab"
           >
             New Tab
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={sendingFullContext ? <RefreshCw size={14} className="spinning" /> : <Globe size={14} />}
+            onClick={handleSendFullContext}
+            title="Send full dataset context"
+            disabled={sendingFullContext}
+          >
+            Full Context
           </Button>
           {onMinimize && (
             <button className="openwebui-chat-action-btn" onClick={handleMinimize} title="Minimize">

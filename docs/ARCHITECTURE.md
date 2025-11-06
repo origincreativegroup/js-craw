@@ -1,5 +1,14 @@
 # System Architecture
 
+> **Note:** This architecture document is partially outdated. The system now includes:
+> - Company-based crawling (Greenhouse, Lever, Generic, Indeed, LinkedIn)
+> - React TypeScript frontend
+> - AI job filtering and ranking (hourly)
+> - Automated document generation (daily at 3 PM)
+> - Task management system
+> - Company discovery and lifecycle management
+> - See [ENHANCEMENT_PLAN.md](ENHANCEMENT_PLAN.md) for current implementation status
+
 ## Component Overview
 
 ```

@@ -200,6 +200,16 @@ export const updateSchedulerInterval = async (intervalMinutes: number): Promise<
   await api.patch('/automation/scheduler', { interval_minutes: intervalMinutes });
 };
 
+export const getSchedulerStatus = async (): Promise<{
+  status: string;
+  next_run?: string;
+  interval_minutes: number;
+  is_paused: boolean;
+}> => {
+  const response = await api.get('/automation/scheduler');
+  return response.data;
+};
+
 // Searches
 export const getSearches = async (): Promise<SearchCriteria[]> => {
   const response = await api.get('/searches');
@@ -291,6 +301,28 @@ export const getSettings = async (): Promise<any> => {
 
 export const updateSettings = async (settings: any): Promise<any> => {
   const response = await api.patch('/settings', settings);
+  return response.data;
+};
+
+export const getFullContext = async (limitPerType: number = 50, daysBack: number = 30): Promise<any> => {
+  const response = await api.get('/openwebui/context/full', {
+    params: {
+      limit_per_type: limitPerType,
+      days_back: daysBack,
+    },
+  });
+  return response.data;
+};
+
+export const sendFullContextToOpenWebUI = async (limitPerType: number = 50, daysBack: number = 30): Promise<any> => {
+  // Get full context first
+  const context = await getFullContext(limitPerType, daysBack);
+  
+  // Send to OpenWebUI
+  const response = await api.post('/openwebui/send-context', {
+    full_context: context,
+    prompt_type: 'full_analysis',
+  });
   return response.data;
 };
 
