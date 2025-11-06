@@ -55,6 +55,10 @@ const Automation = () => {
     }
   };
 
+  // Ensure TypeScript sees these imports as used
+  const _apiFunctions = { triggerCrawl, pauseScheduler, resumeScheduler, cancelCrawl };
+  void _apiFunctions; // Suppress unused variable warning
+
   const handleJobCrawlerStart = async () => {
     setJobCrawlerAction('start');
     try {
