@@ -12,7 +12,15 @@ import {
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
-import { getCrawlStatus, getDiscoveryStatus, getSchedulerStatus, triggerCrawl, pauseScheduler, resumeScheduler, cancelCrawl } from '../services/api';
+import { 
+  getCrawlStatus, 
+  getDiscoveryStatus, 
+  getSchedulerStatus, 
+  triggerCrawl, 
+  pauseScheduler, 
+  resumeScheduler, 
+  cancelCrawl 
+} from '../services/api';
 import type { CrawlStatus } from '../types';
 import './Automation.css';
 
@@ -54,10 +62,6 @@ const Automation = () => {
       setLoading(false);
     }
   };
-
-  // Ensure TypeScript sees these imports as used
-  const _apiFunctions = { triggerCrawl, pauseScheduler, resumeScheduler, cancelCrawl };
-  void _apiFunctions; // Suppress unused variable warning
 
   const handleJobCrawlerStart = async () => {
     setJobCrawlerAction('start');
