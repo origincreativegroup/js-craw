@@ -1447,7 +1447,7 @@ async def get_job_context(
                     "id": a.id,
                     "activity_type": a.activity_type,
                     "activity_description": a.activity_description,
-                    "metadata": a.metadata,
+                    "metadata": a.activity_metadata,
                     "created_at": a.created_at.isoformat() if a.created_at else None,
                     "created_by": a.created_by,
                 }
