@@ -88,8 +88,8 @@ const AutomationControl = () => {
   
   // Polling state
   const [loading, setLoading] = useState(true);
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const fastPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fastPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Initialize and setup polling
   useEffect(() => {

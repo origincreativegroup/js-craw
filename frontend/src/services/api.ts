@@ -33,6 +33,22 @@ const api = axios.create({
   },
 });
 
+// Add error interceptor to match original fetch() error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Extract error message from axios error response
+    if (error.response) {
+      const errorData = error.response.data;
+      const errorMessage = errorData?.detail || errorData?.message || `Request failed with status ${error.response.status}`;
+      const enhancedError = new Error(errorMessage);
+      (enhancedError as any).response = error.response;
+      return Promise.reject(enhancedError);
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Jobs
 export const getJobs = async (params?: {
   status?: string;

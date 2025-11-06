@@ -41,8 +41,8 @@ const Dashboard = () => {
   const [topJobs, setTopJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const fastPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fastPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadAllData = async () => {
     try {
