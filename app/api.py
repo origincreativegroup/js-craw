@@ -3649,6 +3649,7 @@ class SettingsRead(BaseModel):
     daily_generation_time: str
     
     # AI/Ollama
+    ollama_enabled: bool
     ollama_host: str
     ollama_model: str
     
@@ -3692,6 +3693,7 @@ class SettingsUpdate(BaseModel):
     daily_generation_time: Optional[str] = None
     
     # AI/Ollama
+    ollama_enabled: Optional[bool] = None
     ollama_host: Optional[str] = None
     ollama_model: Optional[str] = None
     
@@ -3735,6 +3737,7 @@ async def get_settings(request: Request):
             crawl_interval_minutes=settings.CRAWL_INTERVAL_MINUTES,
             daily_top_jobs_count=settings.DAILY_TOP_JOBS_COUNT,
             daily_generation_time=settings.DAILY_GENERATION_TIME,
+            ollama_enabled=settings.OLLAMA_ENABLED,
             ollama_host=settings.OLLAMA_HOST,
             ollama_model=settings.OLLAMA_MODEL,
             openwebui_enabled=settings.OPENWEBUI_ENABLED,
@@ -3860,6 +3863,8 @@ async def update_settings(request: Request, update: SettingsUpdate):
                 raise HTTPException(status_code=400, detail="Daily generation time must be in HH:MM format (e.g., 15:00)")
         
         # AI/Ollama settings
+        if "ollama_enabled" in updates:
+            settings.OLLAMA_ENABLED = updates["ollama_enabled"]
         if "ollama_host" in updates:
             settings.OLLAMA_HOST = updates["ollama_host"]
         if "ollama_model" in updates:

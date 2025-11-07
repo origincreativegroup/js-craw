@@ -17,6 +17,10 @@ class TailoredApplicationBuilder:
     def __init__(self):
         self.ollama_url = f"{settings.OLLAMA_HOST}/api/generate"
         self.model = settings.OLLAMA_MODEL
+        self._enabled = getattr(settings, "OLLAMA_ENABLED", True)
+    
+    def _is_enabled(self) -> bool:
+        return getattr(settings, "OLLAMA_ENABLED", self._enabled)
 
     async def generate_documents(
         self,
@@ -30,6 +34,10 @@ class TailoredApplicationBuilder:
         document_types: List[str],
     ) -> Dict[str, Optional[str]]:
         results: Dict[str, Optional[str]] = {doc_type: None for doc_type in document_types}
+
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping tailored application document generation")
+            return results
 
         if "resume" in document_types:
             resume_prompt = self._build_resume_prompt(
@@ -123,6 +131,9 @@ Write a 3-4 paragraph cover letter (~300 words) that quickly connects the candid
 """
 
     async def _call_ollama(self, prompt: str, max_tokens: int) -> Optional[str]:
+        if not self._is_enabled():
+            raise RuntimeError("Ollama integration disabled via settings")
+
         try:
             async with httpx.AsyncClient(timeout=90.0) as client:
                 response = await client.post(

@@ -18,6 +18,10 @@ class JobFitAdvisor:
     def __init__(self):
         self.ollama_url = f"{settings.OLLAMA_HOST}/api/generate"
         self.model = settings.OLLAMA_MODEL
+        self._enabled = getattr(settings, "OLLAMA_ENABLED", True)
+    
+    def _is_enabled(self) -> bool:
+        return getattr(settings, "OLLAMA_ENABLED", self._enabled)
 
     async def evaluate(
         self,
@@ -30,6 +34,22 @@ class JobFitAdvisor:
         user_experience: Optional[str],
         supporting_material: Optional[str] = None,
     ) -> Dict:
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; returning fallback job fit evaluation")
+            return {
+                "summary": "AI job fit evaluation is disabled in settings.",
+                "company_focus": None,
+                "key_requirements": [],
+                "skill_alignment": {
+                    "overall_fit": "unknown",
+                    "matched_skills": [],
+                    "missing_skills": [],
+                    "upskill_suggestions": [],
+                },
+                "tailoring_tips": [],
+                "interview_prep": [],
+            }
+
         prompt = self._build_prompt(
             job_title,
             company,
@@ -117,6 +137,9 @@ Keep sentences short, actionable, and avoid filler text.
 """
 
     async def _call_ollama(self, prompt: str) -> str:
+        if not self._is_enabled():
+            raise RuntimeError("Ollama integration disabled via settings")
+
         async with httpx.AsyncClient(timeout=90.0) as client:
             response = await client.post(
                 self.ollama_url,

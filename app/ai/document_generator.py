@@ -23,6 +23,10 @@ class DocumentGenerator:
         self.model = settings.OLLAMA_MODEL
         self.resume_path = Path(settings.RESUME_STORAGE_PATH)
         self.cover_letter_path = Path(settings.COVER_LETTER_STORAGE_PATH)
+        self._enabled = getattr(settings, "OLLAMA_ENABLED", True)
+    
+    def _is_enabled(self) -> bool:
+        return getattr(settings, "OLLAMA_ENABLED", self._enabled)
 
         # Ensure directories exist
         self.resume_path.mkdir(parents=True, exist_ok=True)
@@ -45,6 +49,10 @@ class DocumentGenerator:
         Returns:
             GeneratedDocument object with generated resume
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping resume generation")
+            return None
+
         try:
             logger.info(f"Generating resume for job {job.id}: {job.title} at {job.company}")
 
@@ -104,6 +112,10 @@ class DocumentGenerator:
         Returns:
             GeneratedDocument object with generated cover letter
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping cover letter generation")
+            return None
+
         try:
             logger.info(f"Generating cover letter for job {job.id}: {job.title} at {job.company}")
 
@@ -158,6 +170,9 @@ class DocumentGenerator:
         Returns:
             Dictionary with 'resume' and 'cover_letter' keys
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping combined document generation")
+            return {'resume': None, 'cover_letter': None}
         results = {
             'resume': await self.generate_resume(job, user_profile, db),
             'cover_letter': await self.generate_cover_letter(job, user_profile, db)
@@ -180,6 +195,9 @@ class DocumentGenerator:
         Returns:
             List of generation results
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping top job document generation")
+            return []
         try:
             # Get user profile
             result = await db.execute(select(UserProfile).limit(1))
@@ -445,6 +463,8 @@ Generate a compelling, personalized cover letter for the {job.title} position at
 
     async def _call_ollama(self, prompt: str, max_tokens: int = 2000) -> str:
         """Call Ollama API for text generation"""
+        if not self._is_enabled():
+            raise RuntimeError("Ollama integration disabled via settings")
         try:
             async with httpx.AsyncClient(timeout=90.0) as client:
                 response = await client.post(

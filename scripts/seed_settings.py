@@ -71,6 +71,7 @@ async def seed_settings():
             'daily_generation_time': settings.DAILY_GENERATION_TIME,
             
             # AI/Ollama
+            'ollama_enabled': settings.OLLAMA_ENABLED,
             'ollama_host': settings.OLLAMA_HOST,
             'ollama_model': settings.OLLAMA_MODEL,
         }

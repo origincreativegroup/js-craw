@@ -15,8 +15,26 @@ class JobAnalyzer:
         self.ollama_url = f"{settings.OLLAMA_HOST}/api/generate"
         self.model = settings.OLLAMA_MODEL
     
+    @staticmethod
+    def _is_enabled() -> bool:
+        return getattr(settings, "OLLAMA_ENABLED", True)
+    
+    def _analysis_disabled_response(self) -> Dict:
+        logger.info("Ollama integration disabled; returning fallback job analysis")
+        return {
+            'summary': 'AI analysis disabled in settings.',
+            'match_score': 50,
+            'pros': [],
+            'cons': [],
+            'keywords_matched': [],
+            'key_requirements': [],
+            'overall_fit': 'AI analysis disabled'
+        }
+    
     async def analyze_job(self, job_data: Dict, search_criteria) -> Dict:
         """Analyze a job posting and match against criteria"""
+        if not self._is_enabled():
+            return self._analysis_disabled_response()
         
         # Build analysis prompt
         prompt = self._build_analysis_prompt(job_data, search_criteria)
@@ -36,13 +54,7 @@ class JobAnalyzer:
             
         except Exception as e:
             logger.error(f"Error in job analysis: {e}", exc_info=True)
-            return {
-                'summary': 'Analysis unavailable',
-                'match_score': 50,
-                'pros': [],
-                'cons': [],
-                'keywords_matched': []
-            }
+            return self._analysis_disabled_response()
     
     def _build_analysis_prompt(self, job_data: Dict, criteria) -> str:
         """Build prompt for AI analysis"""
@@ -78,6 +90,9 @@ Be concise and focus on the most important information."""
     
     async def _call_ollama(self, prompt: str) -> str:
         """Call Ollama API"""
+        if not self._is_enabled():
+            raise RuntimeError("Ollama integration disabled via settings")
+
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 response = await client.post(
@@ -166,6 +181,10 @@ Be concise and focus on the most important information."""
     
     async def generate_report(self, jobs: List[Dict]) -> str:
         """Generate a summary report of found jobs"""
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping AI-generated job summary")
+            return f"Found {len(jobs)} jobs. Enable AI analysis in settings for detailed summaries."
+
         if not jobs:
             return "No new jobs found in this search."
         
@@ -199,6 +218,19 @@ Keep it concise and actionable."""
         Enhanced analysis that builds a company profile and simplifies what they're looking for.
         This provides a clearer, more actionable summary of the job and company needs.
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; returning fallback company profile analysis")
+            return {
+                'company_profile': f"Company profile for {job_data.get('company', 'Unknown Company')}",
+                'company_culture': 'AI analysis disabled',
+                'what_they_want': 'Enable AI analysis to generate this insight.',
+                'simplified_requirements': [],
+                'must_haves': [],
+                'nice_to_haves': [],
+                'role_summary': job_data.get('title', 'Job role'),
+                'why_this_role': 'AI analysis disabled'
+            }
+
         company = company_name or job_data.get('company', 'Unknown Company')
         description = job_data.get('description', 'No description available')
         

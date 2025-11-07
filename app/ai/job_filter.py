@@ -21,6 +21,10 @@ class JobFilter:
         self.ollama_url = f"{settings.OLLAMA_HOST}/api/generate"
         self.model = settings.OLLAMA_MODEL
     
+    @staticmethod
+    def _is_enabled() -> bool:
+        return getattr(settings, "OLLAMA_ENABLED", True)
+    
     async def filter_and_rank_jobs(self, limit: Optional[int] = None) -> List[Job]:
         """
         Analyze all jobs in database and rank them based on user preferences.
@@ -32,6 +36,17 @@ class JobFilter:
         Returns:
             List of jobs sorted by AI match score
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; returning jobs without AI ranking")
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(Job)
+                    .where(Job.description.isnot(None))
+                    .order_by(Job.discovered_at.desc())
+                    .limit(limit or 1000)
+                )
+                return result.scalars().all()
+
         async with AsyncSessionLocal() as db:
             # Get user profile/preferences
             user_profile = await self._get_user_profile(db)
@@ -45,6 +60,10 @@ class JobFilter:
                 .limit(limit or 1000)  # Limit for performance
             )
             jobs = result.scalars().all()
+            
+            if not self._is_enabled():
+                logger.info("Ollama integration disabled; returning jobs without AI ranking")
+                return jobs
             
             logger.info(f"Analyzing {len(jobs)} jobs with AI...")
             
@@ -90,6 +109,10 @@ class JobFilter:
         Returns:
             List of top ranked jobs
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping AI top job selection")
+            return []
+
         async with AsyncSessionLocal() as db:
             # Get jobs from today that are recommended or have high scores
             today = datetime.utcnow().date()
@@ -157,6 +180,10 @@ class JobFilter:
         """
         Use Ollama to intelligently analyze how well a job matches user preferences
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping AI job match analysis")
+            return None
+
         preferences = user_profile.get('preferences', {})
         skills = user_profile.get('skills', [])
         
@@ -277,6 +304,10 @@ Return ONLY valid JSON, no markdown formatting."""
         Use Ollama to intelligently select the best jobs from candidates.
         Considers diversity, quality, and fit.
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; returning top candidates without AI selection")
+            return candidate_jobs[:count]
+
         if len(candidate_jobs) <= count:
             return candidate_jobs
         
@@ -325,6 +356,9 @@ Example: [2, 5, 8, 12, 15]"""
     
     async def _call_ollama(self, prompt: str) -> str:
         """Call Ollama API with optimized settings for analysis"""
+        if not self._is_enabled():
+            raise RuntimeError("Ollama integration disabled via settings")
+
         async with httpx.AsyncClient(timeout=90.0) as client:
             try:
                 response = await client.post(
@@ -413,6 +447,16 @@ Example: [2, 5, 8, 12, 15]"""
         Returns:
             Job dictionary with AI analysis added (match_score, summary, pros, cons, etc.)
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping AI filter for job")
+            job_data.setdefault('ai_match_score', 50)
+            job_data.setdefault('ai_recommended', False)
+            job_data.setdefault('ai_summary', '')
+            job_data.setdefault('ai_pros', [])
+            job_data.setdefault('ai_cons', [])
+            job_data.setdefault('ai_keywords_matched', [])
+            return job_data
+
         try:
             user_profile = await self._get_user_profile_cached()
             if not user_profile:
@@ -459,6 +503,17 @@ Example: [2, 5, 8, 12, 15]"""
         """
         if not jobs:
             return []
+        
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping AI batch job filtering")
+            for job in jobs:
+                job.setdefault('ai_match_score', 50)
+                job.setdefault('ai_recommended', False)
+                job.setdefault('ai_summary', '')
+                job.setdefault('ai_pros', [])
+                job.setdefault('ai_cons', [])
+                job.setdefault('ai_keywords_matched', [])
+            return jobs
         
         # Get user profile if not provided
         if user_profile is None:
@@ -573,6 +628,10 @@ Example: [2, 5, 8, 12, 15]"""
         Returns:
             List of top ranked jobs
         """
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping AI top job selection")
+            return []
+
         async with AsyncSessionLocal() as db:
             # Get jobs from today that are recommended or have high scores
             today = datetime.utcnow().date()

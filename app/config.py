@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://redis:6379/0"
     
     # Ollama
+    OLLAMA_ENABLED: bool = True
     OLLAMA_HOST: str = "http://ollama:11434"
     OLLAMA_MODEL: str = "llama2"
     

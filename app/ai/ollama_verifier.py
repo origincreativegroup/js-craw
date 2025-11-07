@@ -17,6 +17,10 @@ class OllamaVerifier:
         self.ollama_host = settings.OLLAMA_HOST
         self.model = settings.OLLAMA_MODEL
         self.base_url = self.ollama_host
+        self._enabled = getattr(settings, "OLLAMA_ENABLED", True)
+
+    def _is_enabled(self) -> bool:
+        return getattr(settings, "OLLAMA_ENABLED", self._enabled)
 
     async def verify_connection(self) -> Dict:
         """
@@ -29,6 +33,16 @@ class OllamaVerifier:
             'model': self.model,
             'checks': {}
         }
+
+        if not self._is_enabled():
+            logger.info("Ollama integration disabled; skipping verification")
+            results['checks']['ollama_enabled'] = {
+                'status': 'skip',
+                'message': 'Ollama integration disabled in settings'
+            }
+            results['overall_status'] = 'disabled'
+            results['ready_for_production'] = False
+            return results
 
         # Check 1: Ollama server is accessible
         results['checks']['server_accessible'] = await self._check_server_accessible()
